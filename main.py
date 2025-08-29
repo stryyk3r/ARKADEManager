@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 from tabs.tab_backups import BackupsTab
 from tabs.tab_logs import LogsTab
@@ -20,7 +20,7 @@ from core.update_checker import UpdateChecker
 apply_overdue_patch(BackupManager)
 
 # Version information
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 UPDATE_CHECK_URL = "https://api.github.com/repos/stryyk3r/ARKADEManager/releases/latest"
 
 
