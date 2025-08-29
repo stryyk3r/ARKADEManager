@@ -150,6 +150,15 @@ class UpdateChecker:
             if not os.access(current_dir, os.W_OK):
                 raise Exception("No write permission to application directory. Please run as administrator.")
             
+            # Clean up any existing backup directories
+            backup_dir = os.path.join(current_dir, "backup_before_update")
+            if os.path.exists(backup_dir):
+                try:
+                    shutil.rmtree(backup_dir)
+                    self.log("Cleaned up existing backup directory")
+                except Exception as e:
+                    self.log(f"Warning: Could not clean up existing backup: {str(e)}")
+            
             # Create temporary directory for download
             temp_dir = tempfile.mkdtemp()
             zip_path = os.path.join(temp_dir, "update.zip")
@@ -171,7 +180,7 @@ class UpdateChecker:
                         f.write(chunk)
                         downloaded_size += len(chunk)
                         if total_size > 0 and progress_callback:
-                            progress = int((downloaded_size / total_size) * 50)  # First 50% for download
+                            progress = int((downloaded_size / total_size) * 30)  # First 30% for download
                             progress_callback(f"Downloading... {downloaded_size}/{total_size} bytes", progress)
             
             self.log("Download completed successfully")
@@ -182,7 +191,7 @@ class UpdateChecker:
             
             # Extract the update
             if progress_callback:
-                progress_callback("Extracting update...", 50)
+                progress_callback("Extracting update...", 30)
             
             extract_dir = os.path.join(temp_dir, "extracted")
             os.makedirs(extract_dir, exist_ok=True)
@@ -197,19 +206,18 @@ class UpdateChecker:
             
             # Find the main application directory
             if progress_callback:
-                progress_callback("Preparing installation...", 75)
+                progress_callback("Preparing installation...", 50)
             
             # Create backup of current version
             backup_dir = os.path.join(current_dir, "backup_before_update")
             if os.path.exists(backup_dir):
                 shutil.rmtree(backup_dir)
-            shutil.copytree(current_dir, backup_dir, ignore=shutil.ignore_patterns('backup_before_update', '__pycache__', '*.pyc'))
+            shutil.copytree(current_dir, backup_dir, ignore=shutil.ignore_patterns(
+                'backup_before_update', '__pycache__', '*.pyc', '*.pyo', 
+                '.git', '.gitignore', '.gitattributes', '.DS_Store', 'Thumbs.db'
+            ))
             
             self.log("Backup created successfully")
-            
-            # Copy new files
-            if progress_callback:
-                progress_callback("Installing update...", 90)
             
             # Find the extracted application files
             extracted_files = os.listdir(extract_dir)
@@ -224,31 +232,23 @@ class UpdateChecker:
             if not os.path.exists(os.path.join(source_dir, 'main.py')):
                 raise Exception("Invalid update package: main.py not found")
             
-            # Copy files from source to current directory
-            for item in os.listdir(source_dir):
-                source_item = os.path.join(source_dir, item)
-                dest_item = os.path.join(current_dir, item)
-                
-                if os.path.isdir(source_item):
-                    if os.path.exists(dest_item):
-                        shutil.rmtree(dest_item)
-                    shutil.copytree(source_item, dest_item)
-                else:
-                    shutil.copy2(source_item, dest_item)
+            # Log what files we're about to copy
+            self.log(f"Source directory contents: {os.listdir(source_dir)}")
+            self.log(f"Current directory: {current_dir}")
             
-            self.log("Update installed successfully")
+            # Create the update script that will run after the application closes
+            if progress_callback:
+                progress_callback("Preparing update script...", 70)
             
-            # Clean up temporary files
-            if temp_dir and os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
+            update_script = self._create_update_script(source_dir, current_dir, temp_dir)
             
             if progress_callback:
-                progress_callback("Update completed! Restarting application...", 100)
+                progress_callback("Update ready! Closing application...", 90)
             
-            self.log("Update completed successfully. Restarting application...")
+            self.log("Update prepared successfully. Closing application for installation...")
             
-            # Restart the application
-            self._restart_application()
+            # Close the application and run the update script
+            self._close_and_update(update_script)
             
         except Exception as e:
             self.log(f"Error during update: {str(e)}")
@@ -258,6 +258,124 @@ class UpdateChecker:
                     shutil.rmtree(temp_dir)
             except:
                 pass
+            raise e
+    
+    def _create_update_script(self, source_dir, current_dir, temp_dir):
+        """Create a script that will perform the update after the application closes"""
+        try:
+            if sys.platform.startswith('win'):
+                # Windows batch script
+                script_content = f'''@echo off
+echo Waiting for application to close...
+timeout /t 3 /nobreak >nul
+
+echo Installing update...
+cd /d "{current_dir}"
+
+echo Copying new files...
+'''
+                # Add copy commands for each file/directory
+                for item in os.listdir(source_dir):
+                    if item in ['.git', '__pycache__', '.gitignore', '.gitattributes']:
+                        continue
+                    if item.startswith('backup_'):
+                        continue
+                    
+                    source_item = os.path.join(source_dir, item)
+                    if os.path.isdir(source_item):
+                        script_content += f'if exist "{item}" rmdir /s /q "{item}"\n'
+                        script_content += f'xcopy "{source_item}" "{item}" /e /i /y\n'
+                    else:
+                        if not item.startswith('.') or item in ['requirements.txt', 'README.md']:
+                            script_content += f'copy "{source_item}" "{item}" /y\n'
+                
+                script_content += f'''
+echo Cleaning up temporary files...
+rmdir /s /q "{temp_dir}"
+
+echo Update completed! Starting application...
+timeout /t 2 /nobreak >nul
+start "" "{os.path.join(current_dir, 'main.py')}"
+
+echo Update script completed.
+del "%~f0"
+'''
+                script_ext = '.bat'
+            else:
+                # Unix shell script
+                script_content = f'''#!/bin/bash
+echo "Waiting for application to close..."
+sleep 3
+
+echo "Installing update..."
+cd "{current_dir}"
+
+echo "Copying new files..."
+'''
+                # Add copy commands for each file/directory
+                for item in os.listdir(source_dir):
+                    if item in ['.git', '__pycache__', '.gitignore', '.gitattributes']:
+                        continue
+                    if item.startswith('backup_'):
+                        continue
+                    
+                    source_item = os.path.join(source_dir, item)
+                    if os.path.isdir(source_item):
+                        script_content += f'rm -rf "{item}"\n'
+                        script_content += f'cp -r "{source_item}" "{item}"\n'
+                    else:
+                        if not item.startswith('.') or item in ['requirements.txt', 'README.md']:
+                            script_content += f'cp "{source_item}" "{item}"\n'
+                
+                script_content += f'''
+echo "Cleaning up temporary files..."
+rm -rf "{temp_dir}"
+
+echo "Update completed! Starting application..."
+sleep 2
+python3 "{os.path.join(current_dir, 'main.py')}" &
+
+echo "Update script completed."
+rm -- "$0"
+'''
+                script_ext = '.sh'
+            
+            # Write the update script to a temporary file
+            temp_script = tempfile.NamedTemporaryFile(mode='w', suffix=script_ext, delete=False)
+            temp_script.write(script_content)
+            temp_script.close()
+            
+            # Make script executable on Unix systems
+            if not sys.platform.startswith('win'):
+                os.chmod(temp_script.name, 0o755)
+            
+            return temp_script.name
+            
+        except Exception as e:
+            self.log(f"Error creating update script: {str(e)}")
+            raise e
+    
+    def _close_and_update(self, update_script):
+        """Close the application and run the update script"""
+        try:
+            # Execute the update script
+            subprocess.Popen([update_script], shell=True)
+            
+            # Close the application
+            self.log("Closing application for update...")
+            
+            # Use a more forceful exit to ensure the application closes
+            if hasattr(self, 'logger'):
+                try:
+                    self.logger.info("Application closing for update...")
+                except:
+                    pass
+            
+            # Force exit the application
+            os._exit(0)
+            
+        except Exception as e:
+            self.log(f"Error closing application: {str(e)}")
             raise e
     
     def _check_admin_privileges(self):
@@ -272,64 +390,4 @@ class UpdateChecker:
         except:
             return False
     
-    def _restart_application(self):
-        """Restart the application"""
-        try:
-            # Get the current script path
-            script_path = sys.argv[0]
-            
-            # Check if we need admin privileges
-            needs_admin = not os.access(os.path.dirname(os.path.abspath(script_path)), os.W_OK)
-            
-            # Create restart script
-            if sys.platform.startswith('win'):
-                # Windows
-                if needs_admin:
-                    restart_script = f'''@echo off
-timeout /t 2 /nobreak >nul
-powershell -Command "Start-Process '{script_path}' -Verb RunAs"
-exit
-'''
-                else:
-                    restart_script = f'''@echo off
-timeout /t 2 /nobreak >nul
-start "" "{script_path}"
-exit
-'''
-                script_ext = '.bat'
-            else:
-                # Unix-like systems
-                if needs_admin:
-                    restart_script = f'''#!/bin/bash
-sleep 2
-sudo python3 "{script_path}" &
-exit
-'''
-                else:
-                    restart_script = f'''#!/bin/bash
-sleep 2
-python3 "{script_path}" &
-exit
-'''
-                script_ext = '.sh'
-            
-            # Write restart script to temporary file
-            temp_script = tempfile.NamedTemporaryFile(mode='w', suffix=script_ext, delete=False)
-            temp_script.write(restart_script)
-            temp_script.close()
-            
-            # Make script executable on Unix systems
-            if not sys.platform.startswith('win'):
-                os.chmod(temp_script.name, 0o755)
-            
-            # Execute restart script
-            subprocess.Popen([temp_script.name], shell=True)
-            
-            # Exit current application
-            sys.exit(0)
-            
-        except Exception as e:
-            self.log(f"Error restarting application: {str(e)}")
-            messagebox.showinfo("Update Complete", 
-                "Update completed successfully!\n\n"
-                "Please restart the application manually to apply the changes.")
+
