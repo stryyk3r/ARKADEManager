@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+import threading
 
 from tabs.tab_backups import BackupsTab
 from tabs.tab_logs import LogsTab
@@ -20,7 +21,7 @@ from core.update_checker import UpdateChecker
 apply_overdue_patch(BackupManager)
 
 # Version information
-VERSION = "1.0.1"
+VERSION = "1.0.0"
 UPDATE_CHECK_URL = "https://api.github.com/repos/stryyk3r/ARKADEManager/releases/latest"
 
 
@@ -301,11 +302,62 @@ class ArkadeManagerApp(tk.Tk):
 
     def _download_and_install_update(self, update_info):
         """Download and install the update"""
-        # For now, just show a message that this feature is coming soon
-        messagebox.showinfo("Update", 
-            "Auto-update feature is coming soon!\n\n"
-            f"Please manually download version {update_info['version']} from:\n"
-            f"{update_info['download_url']}")
+        try:
+            # Create progress dialog
+            progress_window = tk.Toplevel(self)
+            progress_window.title("Updating Arkade Manager")
+            progress_window.geometry("400x150")
+            progress_window.resizable(False, False)
+            progress_window.transient(self)
+            progress_window.grab_set()
+            
+            # Center the progress window
+            progress_window.update_idletasks()
+            x = (progress_window.winfo_screenwidth() // 2) - (400 // 2)
+            y = (progress_window.winfo_screenheight() // 2) - (150 // 2)
+            progress_window.geometry(f"400x150+{x}+{y}")
+            
+            # Progress label
+            progress_label = tk.Label(progress_window, text="Preparing update...", font=("Arial", 10))
+            progress_label.pack(pady=20)
+            
+            # Progress bar
+            progress_bar = ttk.Progressbar(progress_window, length=350, mode='determinate')
+            progress_bar.pack(pady=10)
+            
+            # Status label
+            status_label = tk.Label(progress_window, text="", font=("Arial", 9))
+            status_label.pack(pady=10)
+            
+            def update_progress(message, percentage):
+                """Update progress dialog"""
+                progress_label.config(text=message)
+                progress_bar['value'] = percentage
+                status_label.config(text=f"{percentage}%")
+                progress_window.update_idletasks()
+            
+            def start_update():
+                """Start the update process in a separate thread"""
+                try:
+                    self.update_checker.download_and_install_update(update_info, update_progress)
+                except Exception as e:
+                    # Show error in main thread
+                    self.after(0, lambda: self._show_update_error(str(e), progress_window, update_info))
+            
+            # Start update in separate thread
+            update_thread = threading.Thread(target=start_update, daemon=True)
+            update_thread.start()
+            
+        except Exception as e:
+            messagebox.showerror("Update Error", f"Failed to start update: {str(e)}")
+    
+    def _show_update_error(self, error_message, progress_window, update_info):
+        """Show update error and close progress window"""
+        progress_window.destroy()
+        messagebox.showerror("Update Error", 
+            f"Failed to download and install update:\n\n{error_message}\n\n"
+            f"Please download version {update_info['version']} manually from:\n"
+            f"{update_info['release_url']}")
 
     def get_theme_button_color(self):
         """Get theme button background color based on current theme"""
