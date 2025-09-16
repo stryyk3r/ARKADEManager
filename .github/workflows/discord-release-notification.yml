@@ -21,8 +21,3 @@ jobs:
             
             **What's New:**
             ${{ github.event.release.body }}
-            
-            **Download:** [Get it here](${{ github.event.release.html_url }})
-            
-            ---
-            *Automatically posted when a new release is published*
