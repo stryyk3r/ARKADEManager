@@ -114,7 +114,7 @@ class BackupManager:
                 self.job_frame.update_job_list()
 
     def _run_smart_scheduler(self):
-        """Smart scheduler that efficiently handles both scheduled and overdue jobs"""
+        """Smart scheduler that handles scheduled jobs (overdue jobs only checked on startup)"""
         try:
             import schedule
             now = datetime.now()
@@ -128,8 +128,8 @@ class BackupManager:
                 if scheduled_jobs:
                     next_run = scheduled_jobs[0].next_run
                     if next_run and next_run <= now:
-                        # Job is due or overdue - execute it
-                        self.logger.info(f"Executing scheduled job: {job_name}")
+                        # Job is due - execute it
+                        self.logger.info(f"Executing scheduled job: {job_name} (due at {next_run.strftime('%H:%M:%S')})")
                         try:
                             self._queue_backup(job)
                             jobs_executed += 1
@@ -144,7 +144,7 @@ class BackupManager:
                         self.logger.error(f"Failed to reschedule job '{job_name}': {str(e)}")
             
             if jobs_executed > 0:
-                self.logger.info(f"Smart scheduler executed {jobs_executed} jobs")
+                self.logger.info(f"Scheduler executed {jobs_executed} jobs")
                 
         except Exception as e:
             self.logger.error(f"Error in smart scheduler: {str(e)}")

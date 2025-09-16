@@ -21,7 +21,7 @@ from core.update_checker import UpdateChecker
 apply_overdue_patch(BackupManager)
 
 # Version information
-VERSION = "1.0.41"
+VERSION = "1.0.5"
 UPDATE_CHECK_URL = "https://api.github.com/repos/stryyk3r/ARKADEManager/releases/latest"
 
 
@@ -73,6 +73,10 @@ class ArkadeManagerApp(tk.Tk):
         if hasattr(self.backup_manager, "set_job_frame"):
             self.backup_manager.set_job_frame(self.backups_tab)
             # self.logger.info("Backup manager job frame set")
+        
+        # Run startup overdue check once (not through scheduler)
+        if hasattr(self.backup_manager, "run_startup_overdue_check"):
+            self.backup_manager.run_startup_overdue_check()
         
         # Apply initial theme
         ModernTheme.apply_theme(self, self.theme_var)

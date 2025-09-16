@@ -215,24 +215,22 @@ def check_overdue_jobs_smart(self):
 def run_scheduler_with_overdue(self):
     """
     Smart scheduler that:
-    - checks for overdue jobs only on startup and 5 minutes after scheduled backups
+    - checks for overdue jobs ONLY on startup (first run)
     - NOTE: schedule.run_pending() is removed to prevent conflicts with main scheduler
     """
-    # Only check for overdue jobs occasionally, not every second
-    now = datetime.now()
+    # Only check for overdue jobs on startup, not continuously
     last_overdue_check = getattr(self, "_last_overdue_check", None)
     
-    # Check for overdue jobs:
-    # 1. On first run (last_overdue_check is None)
-    # 2. Every 5 minutes after the last check
-    if (last_overdue_check is None or 
-        (now - last_overdue_check).total_seconds() >= 300):  # 5 minutes = 300 seconds
+    # Check for overdue jobs ONLY on first run (startup)
+    if last_overdue_check is None:
+        if hasattr(self, "logger"):
+            self.logger.info("Startup overdue check - checking for missed backups...")
         
         ensure_overdue_jobs_run(self)
-        self._last_overdue_check = now
+        self._last_overdue_check = datetime.now()
         
         if hasattr(self, "logger"):
-            self.logger.info(f"Overdue check completed. Next check in 5 minutes.")
+            self.logger.info("Startup overdue check completed. Regular scheduler will handle future backups.")
 
 def apply_overdue_patch(BackupManagerClass):
     """
@@ -244,18 +242,8 @@ def apply_overdue_patch(BackupManagerClass):
     setattr(BackupManagerClass, "_interval_seconds", _interval_seconds)
     setattr(BackupManagerClass, "ensure_overdue_jobs_run", ensure_overdue_jobs_run)
     setattr(BackupManagerClass, "check_overdue_jobs_smart", check_overdue_jobs_smart)
+    setattr(BackupManagerClass, "run_startup_overdue_check", run_scheduler_with_overdue)
 
-    # Wrap/replace run_scheduler safely
-    # If you want to keep your original run_scheduler around:
-    if not hasattr(BackupManagerClass, "_orig_run_scheduler"):
-        setattr(BackupManagerClass, "_orig_run_scheduler",
-                getattr(BackupManagerClass, "run_scheduler", lambda self: None))
-    def _patched_run_scheduler(self):
-        # First let the original do its work
-        try:
-            getattr(self, "_orig_run_scheduler")()
-        except Exception:
-            pass
-        # Then our robust scheduler + overdue
-        run_scheduler_with_overdue(self)
-    setattr(BackupManagerClass, "run_scheduler", _patched_run_scheduler)
+    # NO LONGER PATCHING THE MAIN SCHEDULER
+    # The main scheduler will handle all regular backups
+    # Overdue check will only run once on startup via run_startup_overdue_check()
