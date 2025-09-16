@@ -10,6 +10,7 @@ from tabs.tab_gus_ini import GUSIniTab
 from tabs.tab_tribefile import TribeFileTab
 from tabs.tab_plugintoggle import PluginToggleTab
 from tabs.tab_newIP import IPUpdaterTab
+from tabs.tab_plugin_manager import PluginManagerTab
 
 from core.backup_core import BackupManager
 from core.overdue_patch import apply_overdue_patch   # <-- added
@@ -21,7 +22,7 @@ from core.update_checker import UpdateChecker
 apply_overdue_patch(BackupManager)
 
 # Version information
-VERSION = "1.0.52"
+VERSION = "1.0.6"
 UPDATE_CHECK_URL = "https://api.github.com/repos/stryyk3r/ARKADEManager/releases/latest"
 
 
@@ -53,6 +54,7 @@ class ArkadeManagerApp(tk.Tk):
         self.tribe_tab   = TribeFileTab(self.notebook, self.theme_var)
         self.plugin_toggle_tab = PluginToggleTab(self.notebook, self.theme_var)
         self.ip_updater_tab = IPUpdaterTab(self.notebook, self.theme_var)
+        self.plugin_manager_tab = PluginManagerTab(self.notebook, self.theme_var, self.logger)
 
         self.notebook.add(self.backups_tab, text="Backups")
         self.notebook.add(self.logs_tab, text="Logs")
@@ -62,6 +64,7 @@ class ArkadeManagerApp(tk.Tk):
         self.notebook.add(self.tribe_tab, text="Tribe Files")
         self.notebook.add(self.plugin_toggle_tab, text=".ini Editor")
         self.notebook.add(self.ip_updater_tab, text="IP Updater")
+        self.notebook.add(self.plugin_manager_tab, text="Plugin Manager")
 
         # Wire the logger to the logs tab
         if hasattr(self.logger, "set_callback"):
@@ -105,6 +108,11 @@ class ArkadeManagerApp(tk.Tk):
         try:
             # Run the scheduler (which includes both scheduled jobs and overdue checks)
             if hasattr(self.backup_manager, "run_scheduler"):
+                # Add debug logging to see if scheduler is being called
+                if not hasattr(self, '_tick_debug_logged'):
+                    self.logger.info("Scheduler tick started - running every 30 seconds")
+                    self._tick_debug_logged = True
+                
                 self.backup_manager.run_scheduler()
 
             # Throttle UI refresh to every ~30 seconds to avoid constant repopulation
@@ -397,6 +405,8 @@ class ArkadeManagerApp(tk.Tk):
             self.plugin_toggle_tab.update_theme()
         if hasattr(self.ip_updater_tab, 'update_theme'):
             self.ip_updater_tab.update_theme()
+        if hasattr(self.plugin_manager_tab, 'update_theme'):
+            self.plugin_manager_tab.update_theme()
             
         # Force refresh of the notebook widget
         try:

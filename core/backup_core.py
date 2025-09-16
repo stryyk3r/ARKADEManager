@@ -104,6 +104,11 @@ class BackupManager:
             self._scheduler_running = True
             self._last_scheduler_run = datetime.now()
             
+            # Add debug logging
+            if not hasattr(self, '_run_scheduler_debug_logged'):
+                self.logger.info("BackupManager.run_scheduler() called")
+                self._run_scheduler_debug_logged = True
+            
             # Use a single, efficient approach that handles both scheduled and overdue jobs
             self._run_smart_scheduler()
             
@@ -114,7 +119,7 @@ class BackupManager:
                 self.job_frame.update_job_list()
 
     def _run_smart_scheduler(self):
-        """Smart scheduler that handles each job individually on its own schedule"""
+        """Smart scheduler that handles scheduled jobs using schedule.run_pending()"""
         try:
             import schedule
             
@@ -129,26 +134,22 @@ class BackupManager:
                         self.logger.info(f"  - {job_tag}: next run at {next_run.strftime('%H:%M:%S')}")
                 self._scheduler_debug_logged = True
             
-            # Check each job individually to see if it's due
-            now = datetime.now()
-            jobs_executed = 0
+            # Count pending jobs before running
+            pending_jobs = [job for job in schedule.get_jobs() 
+                          if hasattr(job, 'next_run') and job.next_run and job.next_run <= datetime.now()]
             
-            for job in schedule.get_jobs():
-                if hasattr(job, 'next_run') and job.next_run and job.next_run <= now:
+            # Run all pending scheduled jobs - this is what actually executes them
+            if pending_jobs:
+                self.logger.info(f"Running {len(pending_jobs)} pending job(s)")
+                for job in pending_jobs:
                     job_tag = getattr(job, 'tag', 'unknown')
-                    self.logger.info(f"Job {job_tag} is due - executing now")
-                    
-                    # Execute this specific job
-                    try:
-                        job.run()
-                        jobs_executed += 1
-                        self.logger.info(f"Successfully executed job: {job_tag}")
-                    except Exception as e:
-                        self.logger.error(f"Failed to execute job {job_tag}: {str(e)}")
+                    self.logger.info(f"  - Executing: {job_tag}")
+            
+            schedule.run_pending()
             
             # Log summary
-            if jobs_executed > 0:
-                self.logger.info(f"Scheduler executed {jobs_executed} individual job(s)")
+            if pending_jobs:
+                self.logger.info(f"Scheduler completed {len(pending_jobs)} job(s)")
                 
         except Exception as e:
             self.logger.error(f"Error in smart scheduler: {str(e)}")

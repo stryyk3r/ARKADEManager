@@ -10,8 +10,8 @@ class LogFrame(ttk.Frame):
         super().__init__(parent)
         self.theme_var = theme_var
 
-        # Create log text widget
-        self.log_text = ScrolledText(self, height=10)
+        # Create log text widget (read-only)
+        self.log_text = ScrolledText(self, height=10, state='disabled')
         self.log_text.pack(fill='both', expand=True, padx=5, pady=5)
 
         # Configure tags for different message types
@@ -23,9 +23,13 @@ class LogFrame(ttk.Frame):
 
     def add_message(self, message, level="info"):
         """Add a message to the log"""
+        # Temporarily enable the widget for writing
+        self.log_text.config(state='normal')
         self.log_text.insert(END, message + "\n")
         self.log_text.tag_add(level, "end-2c linestart", "end-1c")
         self.log_text.see(END)  # Auto-scroll to the bottom
+        # Disable the widget again to make it read-only
+        self.log_text.config(state='disabled')
 
     def ui_call(self, fn):
         """Marshal a callable to the Tk main thread."""
