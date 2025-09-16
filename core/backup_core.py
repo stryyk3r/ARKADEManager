@@ -117,34 +117,17 @@ class BackupManager:
         """Smart scheduler that handles scheduled jobs (overdue jobs only checked on startup)"""
         try:
             import schedule
-            now = datetime.now()
-            jobs_executed = 0
             
-            # Check each active job
-            for job in self.active_jobs:
-                job_name = job.get('zip_name', 'unknown')
-                scheduled_jobs = schedule.get_jobs(tag=job_name)
-                
-                if scheduled_jobs:
-                    next_run = scheduled_jobs[0].next_run
-                    if next_run and next_run <= now:
-                        # Job is due - execute it
-                        self.logger.info(f"Executing scheduled job: {job_name} (due at {next_run.strftime('%H:%M:%S')})")
-                        try:
-                            self._queue_backup(job)
-                            jobs_executed += 1
-                        except Exception as e:
-                            self.logger.error(f"Failed to queue job '{job_name}': {str(e)}")
-                else:
-                    # Job not found in scheduler - this shouldn't happen, but let's reschedule it
-                    self.logger.warning(f"Job '{job_name}' not found in scheduler - rescheduling")
-                    try:
-                        self.schedule_job(job)
-                    except Exception as e:
-                        self.logger.error(f"Failed to reschedule job '{job_name}': {str(e)}")
+            # Get jobs before running to see what's pending
+            jobs_before = schedule.get_jobs()
+            pending_count = len([job for job in jobs_before if job.next_run and job.next_run <= datetime.now()])
             
-            if jobs_executed > 0:
-                self.logger.info(f"Scheduler executed {jobs_executed} jobs")
+            # Run all pending scheduled jobs - this is what actually executes them
+            schedule.run_pending()
+            
+            # Log if any jobs were executed
+            if pending_count > 0:
+                self.logger.info(f"Scheduler executed {pending_count} pending job(s)")
                 
         except Exception as e:
             self.logger.error(f"Error in smart scheduler: {str(e)}")
