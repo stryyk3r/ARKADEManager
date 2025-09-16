@@ -1,0 +1,28 @@
+name: Discord Release Notification
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord Notification
+        uses: Ilshidur/action-discord@master
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        with:
+          args: |
+            🎉 **New Arkade Manager Release!**
+            
+            **Version:** ${{ github.event.release.tag_name }}
+            **Title:** ${{ github.event.release.name }}
+            
+            **What's New:**
+            ${{ github.event.release.body }}
+            
+            **Download:** [Get it here](${{ github.event.release.html_url }})
+            
+            ---
+            *Automatically posted when a new release is published*
