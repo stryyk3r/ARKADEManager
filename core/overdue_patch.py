@@ -215,16 +215,9 @@ def check_overdue_jobs_smart(self):
 def run_scheduler_with_overdue(self):
     """
     Smart scheduler that:
-    - runs schedule.run_pending() for normal scheduled backups
     - checks for overdue jobs only on startup and 5 minutes after scheduled backups
+    - NOTE: schedule.run_pending() is removed to prevent conflicts with main scheduler
     """
-    try:
-        import schedule  # keep your existing dependency
-        schedule.run_pending()
-    except Exception as e:
-        if hasattr(self, "logger"):
-            self.logger.error(f"Scheduler error: {e}")
-    
     # Only check for overdue jobs occasionally, not every second
     now = datetime.now()
     last_overdue_check = getattr(self, "_last_overdue_check", None)

@@ -344,8 +344,30 @@ class BackupManager:
 
     def _queue_backup(self, job_details):
         """Add a backup job to the queue for sequential execution"""
-        self.backup_queue.put(job_details)
         job_name = job_details.get('zip_name', '?')
+        
+        # Check if this job is already queued to prevent duplicates
+        if hasattr(self, '_recently_queued_jobs'):
+            now = datetime.now()
+            # Remove jobs older than 5 minutes from the recently queued list
+            self._recently_queued_jobs = {
+                name: time for name, time in self._recently_queued_jobs.items()
+                if (now - time).total_seconds() < 300
+            }
+            
+            # Check if this job was recently queued (within 2 minutes)
+            if job_name in self._recently_queued_jobs:
+                recent_time = self._recently_queued_jobs[job_name]
+                if (now - recent_time).total_seconds() < 120:  # 2 minutes
+                    self.logger.info(f"Skipping duplicate backup request for {job_name} (queued {int((now - recent_time).total_seconds())} seconds ago)")
+                    return
+        else:
+            self._recently_queued_jobs = {}
+        
+        # Add to recently queued jobs
+        self._recently_queued_jobs[job_name] = datetime.now()
+        
+        self.backup_queue.put(job_details)
         
         if self.backup_running:
             self.logger.info(f"Queued backup job: {job_name} (waiting for current backup to complete)")
