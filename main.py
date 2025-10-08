@@ -31,6 +31,20 @@ class ArkadeManagerApp(tk.Tk):
         super().__init__()
         self.title(f"Arkade Manager v{VERSION}")
         self.geometry("1100x800")
+        
+        # Set custom icon
+        try:
+            self.iconbitmap('arkade_icon.ico')
+        except Exception as e:
+            print(f"Could not set custom icon: {e}")
+            # Fallback: try using iconphoto method with PNG
+            try:
+                from tkinter import PhotoImage
+                icon = PhotoImage(file='arkade_logo.png')
+                self.iconphoto(False, icon)
+            except Exception as e2:
+                print(f"Could not set PNG icon either: {e2}")
+        
         self.theme_var = tk.StringVar(value="dark")
         
         # Create theme toggle button
