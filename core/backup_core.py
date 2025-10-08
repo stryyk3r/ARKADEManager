@@ -211,6 +211,16 @@ class BackupManager:
                     if not isinstance(loaded_jobs, list):
                         raise ValueError("Invalid jobs data format")
 
+                    # Convert ISO format strings back to datetime objects
+                    for job in loaded_jobs:
+                        for key, value in job.items():
+                            if isinstance(value, str) and key == '_next_run_at':
+                                try:
+                                    job[key] = datetime.fromisoformat(value)
+                                except ValueError:
+                                    # If parsing fails, keep as string or remove the key
+                                    pass
+                    
                     self.active_jobs = loaded_jobs
                     # self.logger.info(f"Successfully loaded {len(self.active_jobs)} jobs from {jobs_file}")
             else:
@@ -277,8 +287,19 @@ class BackupManager:
         """Save jobs to file"""
         try:
             jobs_file = os.path.join(SCRIPT_DIR, 'backup_jobs.json')  # Use SCRIPT_DIR constant
+            
+            # Convert datetime objects to strings for JSON serialization
+            serializable_jobs = []
+            for job in self.active_jobs:
+                serializable_job = job.copy()
+                # Convert datetime objects to ISO format strings
+                for key, value in serializable_job.items():
+                    if isinstance(value, datetime):
+                        serializable_job[key] = value.isoformat()
+                serializable_jobs.append(serializable_job)
+            
             with open(jobs_file, 'w') as f:
-                json.dump(self.active_jobs, f, indent=4)
+                json.dump(serializable_jobs, f, indent=4)
             # self.logger.info(f"Successfully saved {len(self.active_jobs)} jobs to {jobs_file}")
         except Exception as e:
             self.logger.error(f"Error saving jobs: {str(e)}")
