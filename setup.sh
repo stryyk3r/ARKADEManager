@@ -43,7 +43,7 @@ fi
 echo ""
 
 echo "[4/4] Verifying installation..."
-python3 -c "import requests; import schedule; print('All dependencies verified successfully!')" 2>/dev/null
+python3 -c "import requests; import schedule; from PIL import Image; print('All dependencies verified successfully!')" 2>/dev/null
 if [ $? -ne 0 ]; then
     echo "WARNING: Some dependencies may not be installed correctly."
     echo "Try running: pip install -r requirements.txt"

@@ -54,7 +54,7 @@ if errorlevel 1 (
 echo.
 
 echo [4/4] Verifying installation...
-python -c "import requests; import schedule; print('All dependencies verified successfully!')" 2>nul
+python -c "import requests; import schedule; from PIL import Image; print('All dependencies verified successfully!')" 2>nul
 if errorlevel 1 (
     echo WARNING: Some dependencies may not be installed correctly.
     echo Try running: pip install -r requirements.txt

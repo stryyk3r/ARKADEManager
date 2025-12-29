@@ -89,7 +89,7 @@ def verify_installation():
     """Verify that all required modules can be imported"""
     print("\n[4/4] Verifying installation...")
     
-    required_modules = ['requests', 'schedule']
+    required_modules = ['requests', 'schedule', 'PIL']
     missing_modules = []
     
     for module in required_modules:
