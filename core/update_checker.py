@@ -243,19 +243,33 @@ class UpdateChecker:
             self.log(f"Source directory contents: {os.listdir(source_dir)}")
             self.log(f"Current directory: {current_dir}")
             
-            # Create the update script that will run after the application closes
+            # Copy files to current directory
             if progress_callback:
-                progress_callback("Preparing update script...", 70)
+                progress_callback("Installing update files...", 50)
             
-            update_script = self._create_update_script(source_dir, current_dir, temp_dir)
+            self._copy_update_files(source_dir, current_dir)
+            self.log("Update files copied successfully")
+            
+            # Build the EXE if running as executable or if EXE exists
+            exe_path = os.path.join(current_dir, "ArkadeManager.exe")
+            spec_path = os.path.join(current_dir, "ArkadeManager.spec")
+            if os.path.exists(spec_path) and (getattr(sys, 'frozen', False) or os.path.exists(exe_path)):
+                if progress_callback:
+                    progress_callback("Rebuilding EXE...", 70)
+                
+                self.log("Rebuilding EXE with updated code...")
+                if self._build_exe(current_dir, progress_callback):
+                    self.log("EXE rebuilt successfully")
+                else:
+                    self.log("Warning: EXE rebuild failed, but update files are installed")
             
             if progress_callback:
-                progress_callback("Update ready! Closing application...", 90)
+                progress_callback("Update complete! Restarting...", 95)
             
-            self.log("Update prepared successfully. Closing application for installation...")
+            self.log("Update completed successfully. Restarting application...")
             
-            # Close the application and run the update script
-            self._close_and_update(update_script)
+            # Restart the application
+            self._restart_application(current_dir)
             
         except Exception as e:
             self.log(f"Error during update: {str(e)}")
@@ -403,39 +417,149 @@ rm -- "$0"
             self.log(f"Error creating update script: {str(e)}")
             raise e
     
-    def _close_and_update(self, update_script):
-        """Close the application and run the update script"""
+    def _copy_update_files(self, source_dir, current_dir):
+        """Copy update files from source to current directory"""
         try:
-            self.log("Closing application for update...")
+            items_to_skip = ['.git', '__pycache__', '.gitignore', '.gitattributes', 
+                           'backup_before_update', 'dist', 'build', 'backup_jobs.json']
             
-            # Use a more forceful exit to ensure the application closes
-            if hasattr(self, 'logger'):
-                try:
-                    self.logger.info("Application closing for update...")
-                except:
-                    pass
+            for item in os.listdir(source_dir):
+                if item in items_to_skip or item.startswith('backup_'):
+                    continue
+                
+                source_item = os.path.join(source_dir, item)
+                dest_item = os.path.join(current_dir, item)
+                
+                if os.path.isdir(source_item):
+                    # Remove existing directory and copy new one
+                    if os.path.exists(dest_item):
+                        shutil.rmtree(dest_item)
+                    shutil.copytree(source_item, dest_item)
+                    self.log(f"Copied directory: {item}")
+                else:
+                    # Copy file
+                    if not item.startswith('.') or item in ['requirements.txt', 'README.md', '.gitignore']:
+                        shutil.copy2(source_item, dest_item)
+                        self.log(f"Copied file: {item}")
             
-            # Execute the update script in a way that ensures it runs
-            # Use CREATE_NEW_CONSOLE on Windows to ensure the script runs independently
+            return True
+        except Exception as e:
+            self.log(f"Error copying update files: {str(e)}")
+            raise e
+    
+    def _build_exe(self, current_dir, progress_callback=None):
+        """Build the EXE using PyInstaller"""
+        try:
+            spec_path = os.path.join(current_dir, "ArkadeManager.spec")
+            if not os.path.exists(spec_path):
+                self.log("No spec file found, skipping EXE build")
+                return False
+            
+            # Check if PyInstaller is available
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip", "show", "pyinstaller"],
+                    capture_output=True,
+                    check=False
+                )
+                if result.returncode != 0:
+                    self.log("PyInstaller not found, installing...")
+                    if progress_callback:
+                        progress_callback("Installing PyInstaller...", 72)
+                    subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "--quiet", "pyinstaller"],
+                        check=True
+                    )
+            except Exception as e:
+                self.log(f"Error checking/installing PyInstaller: {str(e)}")
+                return False
+            
+            # Clean previous build
+            build_dir = os.path.join(current_dir, "build")
+            dist_dir = os.path.join(current_dir, "dist")
+            if os.path.exists(build_dir):
+                shutil.rmtree(build_dir)
+            if os.path.exists(dist_dir):
+                shutil.rmtree(dist_dir)
+            
+            if progress_callback:
+                progress_callback("Building EXE...", 75)
+            
+            # Build the EXE
+            self.log("Running PyInstaller...")
+            result = subprocess.run(
+                [sys.executable, "-m", "PyInstaller", "--clean", "--noconfirm", spec_path],
+                cwd=current_dir,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0:
+                self.log(f"PyInstaller build failed: {result.stderr}")
+                return False
+            
+            # Copy the built EXE to main directory
+            built_exe = os.path.join(dist_dir, "ArkadeManager.exe")
+            if os.path.exists(built_exe):
+                exe_dest = os.path.join(current_dir, "ArkadeManager.exe")
+                # Backup old EXE
+                if os.path.exists(exe_dest):
+                    backup_exe = exe_dest + ".old"
+                    if os.path.exists(backup_exe):
+                        os.remove(backup_exe)
+                    os.rename(exe_dest, backup_exe)
+                
+                shutil.copy2(built_exe, exe_dest)
+                self.log("EXE built and deployed successfully")
+                return True
+            else:
+                self.log("Built EXE not found in dist folder")
+                return False
+                
+        except Exception as e:
+            self.log(f"Error building EXE: {str(e)}")
+            return False
+    
+    def _restart_application(self, current_dir):
+        """Restart the application"""
+        try:
+            self.log("Restarting application...")
+            
+            # Determine how to restart
+            if getattr(sys, 'frozen', False):
+                # Running as executable - restart the EXE
+                exe_path = os.path.join(current_dir, "ArkadeManager.exe")
+                if os.path.exists(exe_path):
+                    restart_cmd = [exe_path]
+                else:
+                    restart_cmd = [sys.executable]
+            else:
+                # Running as script - restart with Python
+                main_py = os.path.join(current_dir, "main.py")
+                restart_cmd = [sys.executable, main_py]
+            
+            # Start the new process
             if sys.platform.startswith('win'):
-                # Use DETACHED_PROCESS to ensure the script runs even after this process exits
+                # On Windows, use CREATE_NEW_CONSOLE to start in new window
                 subprocess.Popen(
-                    [update_script],
-                    shell=True,
+                    restart_cmd,
+                    cwd=current_dir,
                     creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS
                 )
             else:
-                subprocess.Popen([update_script], shell=True)
+                # On Unix, start in background
+                subprocess.Popen(restart_cmd, cwd=current_dir, start_new_session=True)
             
-            # Give the script a moment to start
+            # Give it a moment to start
             import time
-            time.sleep(0.5)
+            time.sleep(1)
             
-            # Force exit the application
+            # Close this instance
             os._exit(0)
             
         except Exception as e:
-            self.log(f"Error closing application: {str(e)}")
+            self.log(f"Error restarting application: {str(e)}")
             raise e
     
     def _check_admin_privileges(self):
