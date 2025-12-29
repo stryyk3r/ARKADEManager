@@ -146,7 +146,14 @@ class UpdateChecker:
                 raise Exception("No direct download URL available. Please download manually from the release page.")
             
             # Validate that we have write permissions to the current directory
-            current_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            # Get the actual executable/script path
+            if getattr(sys, 'frozen', False):
+                # Running as compiled executable
+                current_dir = os.path.dirname(sys.executable)
+            else:
+                # Running as script
+                current_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            
             if not os.access(current_dir, os.W_OK):
                 raise Exception("No write permission to application directory. Please run as administrator.")
             
@@ -263,9 +270,21 @@ class UpdateChecker:
     def _create_update_script(self, source_dir, current_dir, temp_dir):
         """Create a script that will perform the update after the application closes"""
         try:
+            # Determine how to restart the application
+            if getattr(sys, 'frozen', False):
+                # Running as compiled executable
+                restart_command = f'start "" "{sys.executable}"'
+                app_name = "ArkadeManager.exe"
+            else:
+                # Running as script
+                main_py = os.path.join(current_dir, 'main.py')
+                restart_command = f'start "" python "{main_py}"'
+                app_name = "main.py"
+            
             if sys.platform.startswith('win'):
-                # Windows batch script
+                # Windows batch script - use quotes for paths with spaces
                 script_content = f'''@echo off
+setlocal enabledelayedexpansion
 echo Waiting for application to close...
 timeout /t 5 /nobreak >nul
 
@@ -286,22 +305,29 @@ echo Copying new files...
                     # Skip dist folder to prevent nesting
                     if item == 'dist':
                         continue
+                    # Skip build folder
+                    if item == 'build':
+                        continue
                     
                     source_item = os.path.join(source_dir, item)
+                    # Escape paths with quotes for safety
+                    source_quoted = f'"{source_item}"'
+                    dest_quoted = f'"{item}"'
+                    
                     if os.path.isdir(source_item):
-                        script_content += f'if exist "{item}" rmdir /s /q "{item}"\n'
-                        script_content += f'xcopy "{source_item}" "{item}" /e /i /y\n'
+                        script_content += f'if exist {dest_quoted} rmdir /s /q {dest_quoted}\n'
+                        script_content += f'xcopy {source_quoted} {dest_quoted} /e /i /y /q\n'
                     else:
                         if not item.startswith('.') or item in ['requirements.txt', 'README.md']:
-                            script_content += f'copy "{source_item}" "{item}" /y\n'
+                            script_content += f'copy {source_quoted} {dest_quoted} /y\n'
                 
                 script_content += f'''
 echo Cleaning up temporary files...
-rmdir /s /q "{temp_dir}"
+if exist "{temp_dir}" rmdir /s /q "{temp_dir}"
 
 echo Update completed! Starting application...
 timeout /t 2 /nobreak >nul
-start "" "{os.path.join(current_dir, 'main.py')}"
+{restart_command}
 
 echo Update script completed.
 del "%~f0"
@@ -330,6 +356,9 @@ echo "Copying new files..."
                     # Skip dist folder to prevent nesting
                     if item == 'dist':
                         continue
+                    # Skip build folder
+                    if item == 'build':
+                        continue
                     
                     source_item = os.path.join(source_dir, item)
                     if os.path.isdir(source_item):
@@ -339,13 +368,20 @@ echo "Copying new files..."
                         if not item.startswith('.') or item in ['requirements.txt', 'README.md']:
                             script_content += f'cp "{source_item}" "{item}"\n'
                 
+                # Determine restart command for Unix
+                if getattr(sys, 'frozen', False):
+                    unix_restart = f'"{sys.executable}" &'
+                else:
+                    main_py = os.path.join(current_dir, 'main.py')
+                    unix_restart = f'python3 "{main_py}" &'
+                
                 script_content += f'''
 echo "Cleaning up temporary files..."
 rm -rf "{temp_dir}"
 
 echo "Update completed! Starting application..."
 sleep 2
-python3 "{os.path.join(current_dir, 'main.py')}" &
+{unix_restart}
 
 echo "Update script completed."
 rm -- "$0"

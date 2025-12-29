@@ -37,7 +37,7 @@ from core.update_checker import UpdateChecker
 apply_overdue_patch(BackupManager)
 
 # Version information
-VERSION = "1.0.18"
+VERSION = "1.0.19"
 UPDATE_CHECK_URL = "https://api.github.com/repos/stryyk3r/ARKADEManager/releases/latest"
 
 
@@ -401,10 +401,25 @@ class ArkadeManagerApp(tk.Tk):
     def _show_update_error(self, error_message, progress_window, update_info):
         """Show update error and close progress window"""
         progress_window.destroy()
+        
+        # Create a more helpful error message with manual installation instructions
+        manual_instructions = f"""
+MANUAL INSTALLATION INSTRUCTIONS:
+
+1. Close Arkade Manager completely
+2. Download the latest version from:
+   {update_info['release_url']}
+3. Extract the ZIP file to a temporary location
+4. Copy all files from the extracted folder to your current Arkade Manager folder
+   (Replace all files except backup_jobs.json to preserve your backup jobs)
+5. Restart Arkade Manager
+
+Current location: {os.path.dirname(os.path.abspath(sys.argv[0]))}
+"""
+        
         messagebox.showerror("Update Error", 
-            f"Failed to download and install update:\n\n{error_message}\n\n"
-            f"Please download version {update_info['version']} manually from:\n"
-            f"{update_info['release_url']}")
+            f"Failed to download and install update automatically:\n\n{error_message}\n\n"
+            f"{manual_instructions}")
 
     def get_theme_button_color(self):
         """Get theme button background color based on current theme"""
