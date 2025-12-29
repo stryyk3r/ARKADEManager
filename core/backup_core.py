@@ -19,9 +19,19 @@ from queue import Queue
 from core.logger import Logger
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-JOB_FILE = os.path.join(SCRIPT_DIR, "jobs.json")
-LOG_FOLDER = os.path.join(SCRIPT_DIR, "logs")
-CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
+
+# Create a persistent data directory outside the application folder
+# This prevents data loss during updates
+APP_DATA_DIR = os.path.join(os.path.expanduser("~"), "ArkadeManager")
+os.makedirs(APP_DATA_DIR, exist_ok=True)
+
+# Use persistent data directory for all user data
+JOB_FILE = os.path.join(APP_DATA_DIR, "backup_jobs.json")
+LOG_FOLDER = os.path.join(APP_DATA_DIR, "logs")
+CONFIG_FILE = os.path.join(APP_DATA_DIR, "config.json")
+
+# Ensure logs directory exists
+os.makedirs(LOG_FOLDER, exist_ok=True)
 
 
 class BackupManager:
@@ -32,6 +42,9 @@ class BackupManager:
         self.job_frame = None
         self.current_job = None
         self.monthly_backup_destination = None  # Store user's preferred monthly backup location
+        
+        # Migrate data from old location to new persistent location
+        self._migrate_data_if_needed()
 
         # Single-worker executor to keep backups off UI thread and serialized
         self.executor = ThreadPoolExecutor(max_workers=1)
@@ -83,6 +96,34 @@ class BackupManager:
         except Exception as e:
             self.logger.error(f"Failed to load jobs: {str(e)}")
             self.active_jobs = []
+
+    def _migrate_data_if_needed(self):
+        """Migrate data from old location to new persistent location"""
+        try:
+            # Old file paths in the core directory
+            old_job_file = os.path.join(SCRIPT_DIR, "backup_jobs.json")
+            old_config_file = os.path.join(SCRIPT_DIR, "config.json")
+            old_log_folder = os.path.join(SCRIPT_DIR, "logs")
+            
+            # Check if old files exist and new files don't
+            if os.path.exists(old_job_file) and not os.path.exists(JOB_FILE):
+                print("Migrating backup_jobs.json to persistent location...")
+                shutil.copy2(old_job_file, JOB_FILE)
+                print(f"Migrated backup jobs to: {JOB_FILE}")
+            
+            if os.path.exists(old_config_file) and not os.path.exists(CONFIG_FILE):
+                print("Migrating config.json to persistent location...")
+                shutil.copy2(old_config_file, CONFIG_FILE)
+                print(f"Migrated config to: {CONFIG_FILE}")
+            
+            if os.path.exists(old_log_folder) and not os.path.exists(LOG_FOLDER):
+                print("Migrating logs to persistent location...")
+                shutil.copytree(old_log_folder, LOG_FOLDER)
+                print(f"Migrated logs to: {LOG_FOLDER}")
+                
+        except Exception as e:
+            print(f"Error during data migration: {e}")
+            # Don't raise the exception, just log it
 
     def set_job_frame(self, job_frame):
         """Set the job frame reference"""
@@ -198,7 +239,7 @@ class BackupManager:
     def load_jobs(self):
         """Load jobs from file with improved error handling"""
         try:
-            jobs_file = os.path.join(SCRIPT_DIR, 'backup_jobs.json')  # Use SCRIPT_DIR constant
+            jobs_file = JOB_FILE  # Use persistent data directory
             if os.path.exists(jobs_file):
                 with open(jobs_file, 'r') as f:
                     data = f.read()
@@ -211,6 +252,16 @@ class BackupManager:
                     if not isinstance(loaded_jobs, list):
                         raise ValueError("Invalid jobs data format")
 
+                    # Convert ISO format strings back to datetime objects
+                    for job in loaded_jobs:
+                        for key, value in job.items():
+                            if isinstance(value, str) and key == '_next_run_at':
+                                try:
+                                    job[key] = datetime.fromisoformat(value)
+                                except ValueError:
+                                    # If parsing fails, keep as string or remove the key
+                                    pass
+                    
                     self.active_jobs = loaded_jobs
                     # self.logger.info(f"Successfully loaded {len(self.active_jobs)} jobs from {jobs_file}")
             else:
@@ -276,9 +327,20 @@ class BackupManager:
     def save_jobs(self):
         """Save jobs to file"""
         try:
-            jobs_file = os.path.join(SCRIPT_DIR, 'backup_jobs.json')  # Use SCRIPT_DIR constant
+            jobs_file = JOB_FILE  # Use persistent data directory
+            
+            # Convert datetime objects to strings for JSON serialization
+            serializable_jobs = []
+            for job in self.active_jobs:
+                serializable_job = job.copy()
+                # Convert datetime objects to ISO format strings
+                for key, value in serializable_job.items():
+                    if isinstance(value, datetime):
+                        serializable_job[key] = value.isoformat()
+                serializable_jobs.append(serializable_job)
+            
             with open(jobs_file, 'w') as f:
-                json.dump(self.active_jobs, f, indent=4)
+                json.dump(serializable_jobs, f, indent=4)
             # self.logger.info(f"Successfully saved {len(self.active_jobs)} jobs to {jobs_file}")
         except Exception as e:
             self.logger.error(f"Error saving jobs: {str(e)}")

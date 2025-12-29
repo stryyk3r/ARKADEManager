@@ -1,6 +1,21 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
+import os, sys, ctypes
+from pathlib import Path
+
+# Give the app its own identity on the Windows taskbar (prevents grouping under Python)
+try:
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("com.arkade.manager")
+except Exception:
+    pass
+
+def resource_path(rel: str) -> str:
+    """Return absolute path to resource, works for dev & PyInstaller onefile."""
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        return str(Path(base) / rel)   # temp dir used by onefile
+    return str(Path(__file__).parent / rel)
 
 from tabs.tab_backups import BackupsTab
 from tabs.tab_logs import LogsTab
@@ -22,7 +37,11 @@ from core.update_checker import UpdateChecker
 apply_overdue_patch(BackupManager)
 
 # Version information
-VERSION = "1.0.8"
+<<<<<<< HEAD
+VERSION = "1.0.16"
+=======
+VERSION = "1.0.14"
+>>>>>>> 031bd5de9c69624bafbc05ff1227e7e14418846b
 UPDATE_CHECK_URL = "https://api.github.com/repos/stryyk3r/ARKADEManager/releases/latest"
 
 
@@ -31,6 +50,20 @@ class ArkadeManagerApp(tk.Tk):
         super().__init__()
         self.title(f"Arkade Manager v{VERSION}")
         self.geometry("1100x800")
+        
+        # Set custom icon (.ico preferred on Windows)
+        try:
+            ico = resource_path("arkade_icon.ico")
+            self.iconbitmap(ico)
+        except Exception as e:
+            print(f"ICO failed ({e}); trying PNG fallback")
+            try:
+                from tkinter import PhotoImage
+                png = resource_path("arkade_logo.png")
+                self.iconphoto(False, PhotoImage(file=png))
+            except Exception as e2:
+                print(f"PNG fallback failed: {e2}")
+        
         self.theme_var = tk.StringVar(value="dark")
         
         # Create theme toggle button
@@ -322,6 +355,12 @@ class ArkadeManagerApp(tk.Tk):
             progress_window.resizable(False, False)
             progress_window.transient(self)
             progress_window.grab_set()
+            
+            # Set icon for progress window
+            try:
+                progress_window.iconbitmap(resource_path("arkade_icon.ico"))
+            except Exception:
+                pass
             
             # Center the progress window
             progress_window.update_idletasks()

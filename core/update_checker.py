@@ -280,6 +280,14 @@ echo Copying new files...
                         continue
                     if item.startswith('backup_'):
                         continue
+<<<<<<< HEAD
+                    # Skip backup_jobs.json to preserve user data during updates
+                    if item == 'backup_jobs.json':
+=======
+                    # Skip dist folder to prevent nesting
+                    if item == 'dist':
+>>>>>>> 031bd5de9c69624bafbc05ff1227e7e14418846b
+                        continue
                     
                     source_item = os.path.join(source_dir, item)
                     if os.path.isdir(source_item):
@@ -317,6 +325,14 @@ echo "Copying new files..."
                     if item in ['.git', '__pycache__', '.gitignore', '.gitattributes']:
                         continue
                     if item.startswith('backup_'):
+                        continue
+<<<<<<< HEAD
+                    # Skip backup_jobs.json to preserve user data during updates
+                    if item == 'backup_jobs.json':
+=======
+                    # Skip dist folder to prevent nesting
+                    if item == 'dist':
+>>>>>>> 031bd5de9c69624bafbc05ff1227e7e14418846b
                         continue
                     
                     source_item = os.path.join(source_dir, item)
