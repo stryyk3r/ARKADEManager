@@ -97,7 +97,9 @@ class JobFrame(ttk.Frame):
             "Astraeos_WP.ark",
             "Forglar_WP.ark",
             "Amissa_WP.ark",
-            "Ragnarok_WP.ark"
+            "Ragnarok_WP.ark",
+            "Valguero_WP.ark",
+            "LostColony_WP.ark"
         ]
 
     def create_widgets(self):
