@@ -37,11 +37,7 @@ from core.update_checker import UpdateChecker
 apply_overdue_patch(BackupManager)
 
 # Version information
-<<<<<<< HEAD
-VERSION = "1.0.16"
-=======
-VERSION = "1.0.14"
->>>>>>> 031bd5de9c69624bafbc05ff1227e7e14418846b
+VERSION = "1.0.18"
 UPDATE_CHECK_URL = "https://api.github.com/repos/stryyk3r/ARKADEManager/releases/latest"
 
 

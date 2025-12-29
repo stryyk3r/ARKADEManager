@@ -267,7 +267,7 @@ class UpdateChecker:
                 # Windows batch script
                 script_content = f'''@echo off
 echo Waiting for application to close...
-timeout /t 3 /nobreak >nul
+timeout /t 5 /nobreak >nul
 
 echo Installing update...
 cd /d "{current_dir}"
@@ -280,13 +280,11 @@ echo Copying new files...
                         continue
                     if item.startswith('backup_'):
                         continue
-<<<<<<< HEAD
                     # Skip backup_jobs.json to preserve user data during updates
                     if item == 'backup_jobs.json':
-=======
+                        continue
                     # Skip dist folder to prevent nesting
                     if item == 'dist':
->>>>>>> 031bd5de9c69624bafbc05ff1227e7e14418846b
                         continue
                     
                     source_item = os.path.join(source_dir, item)
@@ -313,7 +311,7 @@ del "%~f0"
                 # Unix shell script
                 script_content = f'''#!/bin/bash
 echo "Waiting for application to close..."
-sleep 3
+sleep 5
 
 echo "Installing update..."
 cd "{current_dir}"
@@ -326,13 +324,11 @@ echo "Copying new files..."
                         continue
                     if item.startswith('backup_'):
                         continue
-<<<<<<< HEAD
                     # Skip backup_jobs.json to preserve user data during updates
                     if item == 'backup_jobs.json':
-=======
+                        continue
                     # Skip dist folder to prevent nesting
                     if item == 'dist':
->>>>>>> 031bd5de9c69624bafbc05ff1227e7e14418846b
                         continue
                     
                     source_item = os.path.join(source_dir, item)
@@ -374,10 +370,6 @@ rm -- "$0"
     def _close_and_update(self, update_script):
         """Close the application and run the update script"""
         try:
-            # Execute the update script
-            subprocess.Popen([update_script], shell=True)
-            
-            # Close the application
             self.log("Closing application for update...")
             
             # Use a more forceful exit to ensure the application closes
@@ -386,6 +378,22 @@ rm -- "$0"
                     self.logger.info("Application closing for update...")
                 except:
                     pass
+            
+            # Execute the update script in a way that ensures it runs
+            # Use CREATE_NEW_CONSOLE on Windows to ensure the script runs independently
+            if sys.platform.startswith('win'):
+                # Use DETACHED_PROCESS to ensure the script runs even after this process exits
+                subprocess.Popen(
+                    [update_script],
+                    shell=True,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS
+                )
+            else:
+                subprocess.Popen([update_script], shell=True)
+            
+            # Give the script a moment to start
+            import time
+            time.sleep(0.5)
             
             # Force exit the application
             os._exit(0)
