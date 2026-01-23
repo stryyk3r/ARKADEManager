@@ -115,16 +115,38 @@ fn add_saves_to_zip(
                 // Put all files in "SavedArks" folder in ZIP
                 let zip_path = format!("SavedArks/{}", file_name);
 
-                zip.start_file(zip_path, *options)
-                    .with_context(|| format!("Failed to add file to ZIP: {}", path.display()))?;
-
-                let mut file = fs::File::open(path)
-                    .with_context(|| format!("Failed to open file: {}", path.display()))?;
-                let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer)
-                    .with_context(|| format!("Failed to read file: {}", path.display()))?;
-                zip.write_all(&buffer)
-                    .with_context(|| format!("Failed to write file to ZIP: {}", path.display()))?;
+                // Try to add file to ZIP, skip if locked or inaccessible
+                // Check if file can be opened before adding to ZIP
+                match fs::File::open(path) {
+                    Ok(mut file) => {
+                        let mut buffer = Vec::new();
+                        match file.read_to_end(&mut buffer) {
+                            Ok(_) => {
+                                // File is readable, now try to add to ZIP
+                                match zip.start_file(zip_path, *options) {
+                                    Ok(_) => {
+                                        if let Err(e) = zip.write_all(&buffer) {
+                                            log::warn!("Failed to write file {} to ZIP: {}. Skipping.", path.display(), e);
+                                            continue;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Failed to start file entry for {} in ZIP: {}. Skipping.", path.display(), e);
+                                        continue;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to read file {} (may be locked by server): {}. Skipping.", path.display(), e);
+                                continue;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to open file {} (may be locked by server): {}. Skipping.", path.display(), e);
+                        continue;
+                    }
+                }
             }
         }
     }
