@@ -1107,7 +1107,7 @@ async function loadVersion() {
     const version = await invoke('get_app_version');
     const versionBox = document.getElementById('versionBox');
     if (versionBox) {
-      versionBox.textContent = `Version ${version}`;
+      versionBox.textContent = `v${version}`;
     }
   } catch (e) {
     console.error('Failed to load version:', e);

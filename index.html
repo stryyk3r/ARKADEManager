@@ -673,41 +673,43 @@
       font-size: 14px;
     }
     
-    .version-bar {
-      display: flex;
-      gap: 10px;
-      padding: 8px 20px;
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--border-color);
-      align-items: center;
-    }
-    
     .version-box {
-      background: #ff00ff;
-      color: white;
-      padding: 6px 12px;
-      border-radius: 4px;
-      font-size: 12px;
-      font-weight: 600;
+      background: rgba(255, 0, 255, 0.5); /* 50% transparent magenta */
+      border: 1px solid #ff00ff; /* Fully opaque magenta border */
+      color: #ff00ff; /* Fully opaque magenta text */
+      padding: 3px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 500;
       cursor: default;
       user-select: none;
+      margin-left: 10px;
     }
     
     .update-box {
-      background: #00ffff;
-      color: #000;
-      padding: 6px 12px;
+      position: fixed;
+      top: -30px; /* Position in title bar area (Windows title bar is ~30px) */
+      right: 140px; /* Position before window controls (minimize, maximize, close) */
+      z-index: 10000;
+      background: rgba(0, 255, 255, 0.15); /* Transparent cyan background */
+      border: 2px solid #00ffff; /* Cyan outline - fully visible */
+      color: #00ffff; /* Cyan text - fully opaque/visible */
+      padding: 4px 10px;
       border-radius: 4px;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       cursor: pointer;
       user-select: none;
       display: none;
-      transition: opacity 0.2s;
+      transition: all 0.2s;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      pointer-events: auto; /* Ensure it's clickable even in title bar area */
     }
     
     .update-box:hover {
-      opacity: 0.8;
+      background: rgba(0, 255, 255, 0.25);
+      border-color: #00ffff;
     }
     
     .update-box.show {
@@ -722,14 +724,13 @@
         <img src="/logo-light.png" alt="ARKADE Manager Logo" class="logo-light">
         <img src="/logo-dark.png" alt="ARKADE Manager Logo" class="logo-dark">
         <h1>ARKADE Manager</h1>
+        <div class="version-box" id="versionBox">v2.0.1</div>
       </div>
       <button class="theme-toggle" id="themeToggle">Toggle Theme</button>
     </div>
     
-    <div class="version-bar">
-      <div class="version-box" id="versionBox">Version 2.0.0</div>
-      <div class="update-box" id="updateBox">Update Available - Click to Install</div>
-    </div>
+    <!-- Update box positioned at top right, before window controls -->
+    <div class="update-box" id="updateBox">Update Available - Click to Install</div>
     
     <div class="tabs">
       <button class="tab active" data-tab="backups">Backups</button>
