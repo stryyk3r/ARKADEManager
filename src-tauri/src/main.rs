@@ -321,7 +321,7 @@ async fn get_plugin_server_roots(state: tauri::State<'_, AppState>) -> Result<Ve
     let jobs = app_data.list_jobs().map_err(|e| e.to_string())?;
     
     // Get unique root directories
-    let mut roots: std::collections::HashSet<String> = jobs
+    let roots: std::collections::HashSet<String> = jobs
         .iter()
         .map(|job| job.root_dir.clone())
         .collect();
@@ -425,7 +425,6 @@ async fn toggle_plugin_for_all_servers(
     state: tauri::State<'_, AppState>
 ) -> Result<Vec<String>, String> {
     use std::fs;
-    use std::path::Path;
     use crate::validation::derive_plugins_dir;
     
     let app_data = state.app_data.lock().await;
