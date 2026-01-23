@@ -119,7 +119,7 @@ dependencies = [
 
 [[package]]
 name = "arkade-manager"
-version = "2.0.2"
+version = "2.0.4"
 dependencies = [
  "anyhow",
  "chrono",

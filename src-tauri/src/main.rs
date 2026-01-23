@@ -316,6 +316,178 @@ async fn read_logs(lines: Option<usize>) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn get_plugin_server_roots(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    let app_data = state.app_data.lock().await;
+    let jobs = app_data.list_jobs().map_err(|e| e.to_string())?;
+    
+    // Get unique root directories
+    let mut roots: std::collections::HashSet<String> = jobs
+        .iter()
+        .map(|job| job.root_dir.clone())
+        .collect();
+    
+    let mut roots_vec: Vec<String> = roots.into_iter().collect();
+    roots_vec.sort();
+    Ok(roots_vec)
+}
+
+#[tauri::command]
+async fn list_plugin_folders(server_root: String) -> Result<Vec<serde_json::Value>, String> {
+    use std::fs;
+    use crate::validation::derive_plugins_dir;
+    
+    let plugins_dir = derive_plugins_dir(&server_root);
+    
+    if !plugins_dir.exists() {
+        return Err(format!("Plugins directory does not exist: {}", plugins_dir.display()));
+    }
+    
+    let mut folders = Vec::new();
+    
+    match fs::read_dir(&plugins_dir) {
+        Ok(entries) => {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        let folder_name = path.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("")
+                            .to_string();
+                        
+                        let is_disabled = folder_name.ends_with("_OFF");
+                        let base_name = if is_disabled {
+                            folder_name.strip_suffix("_OFF").unwrap_or(&folder_name).to_string()
+                        } else {
+                            folder_name.clone()
+                        };
+                        
+                        folders.push(serde_json::json!({
+                            "name": folder_name,
+                            "base_name": base_name,
+                            "is_disabled": is_disabled,
+                            "full_path": path.to_string_lossy().to_string()
+                        }));
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            return Err(format!("Failed to read plugins directory: {}", e));
+        }
+    }
+    
+    folders.sort_by(|a, b| {
+        let a_name = a["base_name"].as_str().unwrap_or("");
+        let b_name = b["base_name"].as_str().unwrap_or("");
+        a_name.cmp(b_name)
+    });
+    
+    Ok(folders)
+}
+
+#[tauri::command]
+async fn toggle_plugin_folder(folder_path: String) -> Result<String, String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let path = Path::new(&folder_path);
+    
+    if !path.exists() {
+        return Err(format!("Folder does not exist: {}", folder_path));
+    }
+    
+    let folder_name = path.file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid folder name".to_string())?;
+    
+    let parent = path.parent()
+        .ok_or_else(|| "Invalid folder path".to_string())?;
+    
+    let new_name = if folder_name.ends_with("_OFF") {
+        folder_name.strip_suffix("_OFF").unwrap_or(folder_name).to_string()
+    } else {
+        format!("{}_OFF", folder_name)
+    };
+    
+    let new_path = parent.join(&new_name);
+    
+    fs::rename(path, &new_path)
+        .map_err(|e| format!("Failed to rename folder: {}", e))?;
+    
+    Ok(new_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn toggle_plugin_for_all_servers(
+    base_folder_name: String,
+    target_state_disabled: bool, // true = target is _OFF, false = target is enabled
+    state: tauri::State<'_, AppState>
+) -> Result<Vec<String>, String> {
+    use std::fs;
+    use std::path::Path;
+    use crate::validation::derive_plugins_dir;
+    
+    let app_data = state.app_data.lock().await;
+    let jobs = app_data.list_jobs().map_err(|e| e.to_string())?;
+    
+    // Get unique root directories
+    let roots: std::collections::HashSet<String> = jobs
+        .iter()
+        .map(|job| job.root_dir.clone())
+        .collect();
+    
+    let target_name = if target_state_disabled {
+        format!("{}_OFF", base_folder_name)
+    } else {
+        base_folder_name.clone()
+    };
+    
+    let mut toggled_paths = Vec::new();
+    
+    for root in roots {
+        let plugins_dir = derive_plugins_dir(&root);
+        
+        if !plugins_dir.exists() {
+            continue;
+        }
+        
+        // Look for folders with the base name (with or without _OFF)
+        let folder_without_off = plugins_dir.join(&base_folder_name);
+        let folder_with_off = plugins_dir.join(&format!("{}_OFF", base_folder_name));
+        let target_path = plugins_dir.join(&target_name);
+        
+        // Skip if already in target state
+        if target_path.exists() {
+            continue;
+        }
+        
+        // Find the folder to rename (if it exists in any state)
+        let path_to_rename = if folder_without_off.exists() {
+            Some(folder_without_off)
+        } else if folder_with_off.exists() {
+            Some(folder_with_off)
+        } else {
+            None
+        };
+        
+        if let Some(path) = path_to_rename {
+            // Only rename if it's not already in the target state
+            if path != target_path {
+                if let Err(e) = fs::rename(&path, &target_path) {
+                    log::error!("Failed to rename folder {} to {}: {}", path.display(), target_path.display(), e);
+                    continue;
+                }
+                
+                toggled_paths.push(target_path.to_string_lossy().to_string());
+            }
+        }
+    }
+    
+    Ok(toggled_paths)
+}
+
+#[tauri::command]
 async fn list_source_plugins(source_path: String) -> Result<Vec<plugins::SourcePlugin>, String> {
     plugins::list_source_plugins(&source_path)
 }
@@ -389,6 +561,10 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_plugin_server_roots,
+            list_plugin_folders,
+            toggle_plugin_folder,
+            toggle_plugin_for_all_servers,
             get_config,
             set_theme,
             list_jobs,
