@@ -155,26 +155,36 @@ async fn get_app_version() -> Result<String, String> {
 async fn check_for_updates(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     use tauri_plugin_updater::UpdaterExt;
     
+    log::info!("Checking for updates...");
     match app.updater_builder().build() {
         Ok(updater) => {
+            log::info!("Updater built successfully");
             match updater.check().await {
                 Ok(update) => {
                     if let Some(update) = update {
+                        log::info!("Update available: {}", update.version);
                         Ok(serde_json::json!({
                             "available": true,
                             "version": update.version,
                             "body": update.body.unwrap_or_default()
                         }))
                     } else {
+                        log::info!("No update available");
                         Ok(serde_json::json!({
                             "available": false
                         }))
                     }
                 }
-                Err(e) => Err(format!("Failed to check for updates: {}", e))
+                Err(e) => {
+                    log::error!("Failed to check for updates: {}", e);
+                    Err(format!("Failed to check for updates: {}", e))
+                }
             }
         }
-        Err(e) => Err(format!("Failed to build updater: {}", e))
+        Err(e) => {
+            log::error!("Failed to build updater: {}", e);
+            Err(format!("Failed to build updater: {}", e))
+        }
     }
 }
 
@@ -196,8 +206,8 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
                     
                     // Restart the app (this may not return on some platforms)
                     app.restart();
-                    // If restart() returns, exit the process
-                    std::process::exit(0);
+                    // Note: restart() typically doesn't return, but if it does, we've already succeeded
+                    Ok(())
                 }
                 Ok(None) => Err("No update available".to_string()),
                 Err(e) => Err(format!("Failed to check for updates: {}", e))

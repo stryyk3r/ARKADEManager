@@ -1116,15 +1116,22 @@ async function loadVersion() {
 
 async function checkForUpdates() {
   try {
-    const app = getCurrent();
-    const update = await check(app);
-    
+    console.log('Checking for updates...');
+    const result = await invoke('check_for_updates');
+    console.log('Update check result:', result);
     const updateBox = document.getElementById('updateBox');
-    if (updateBox && update) {
-      updateBox.textContent = `Update Available (v${update.version}) - Click to Install`;
-      updateBox.classList.add('show');
-    } else if (updateBox) {
-      updateBox.classList.remove('show');
+    
+    if (result && result.available) {
+      console.log('Update available:', result.version);
+      if (updateBox) {
+        updateBox.textContent = `Update Available (v${result.version}) - Click to Install`;
+        updateBox.classList.add('show');
+      }
+    } else {
+      console.log('No update available');
+      if (updateBox) {
+        updateBox.classList.remove('show');
+      }
     }
   } catch (e) {
     console.error('Failed to check for updates:', e);
