@@ -21,6 +21,7 @@ pub struct Job {
     pub last_run_at: Option<String>,
     pub next_run_at: Option<String>,
     pub last_file_size: Option<u64>,
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -67,6 +68,7 @@ impl Job {
             last_run_at: None,
             next_run_at: next_run.map(|dt| dt.to_rfc3339()),
             last_file_size: None,
+            last_error: None,
         }
     }
 
@@ -87,6 +89,14 @@ impl Job {
         let now = Utc::now();
         self.last_run_at = Some(now.to_rfc3339());
         self.last_file_size = Some(file_size);
+        self.last_error = None; // Clear any previous error on success
+        self.update_next_run();
+    }
+
+    pub fn update_after_error(&mut self, error: String) {
+        let now = Utc::now();
+        self.last_run_at = Some(now.to_rfc3339());
+        self.last_error = Some(error);
         self.update_next_run();
     }
 }

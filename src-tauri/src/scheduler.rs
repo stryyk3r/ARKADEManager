@@ -173,6 +173,30 @@ impl Scheduler {
                     }
                     Err(e) => {
                         log::error!("Backup failed for job {}: {}", job_clone.name, e);
+                        // Update job with error
+                        let app_data = match AppData::new() {
+                            Ok(ad) => ad,
+                            Err(err) => {
+                                log::error!("Failed to create app data for error update: {}", err);
+                                return;
+                            }
+                        };
+                        if let Some(mut job) = app_data.get_job(&job_clone.id) {
+                            job.update_after_error(format!("{}", e));
+                            let mut jobs = app_data.list_jobs().unwrap_or_default();
+                            if let Some(pos) = jobs.iter().position(|j| j.id == job.id) {
+                                jobs[pos] = job;
+                                if let Err(err) = app_data.save_jobs(&jobs) {
+                                    log::error!("Failed to save jobs: {}", err);
+                                }
+                            }
+                        }
+
+                        // Notify on main thread to avoid winit event loop warnings
+                        let app_handle_for_emit = app_handle_clone.clone();
+                        app_handle_clone.run_on_main_thread(move || {
+                            app_handle_for_emit.emit("job_updated", ()).ok();
+                        }).ok();
                     }
                 }
             });

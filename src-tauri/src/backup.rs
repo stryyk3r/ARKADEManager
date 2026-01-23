@@ -40,17 +40,26 @@ pub async fn create_backup(job: &Job, _app_data: &AppData) -> Result<u64> {
 
     // Add saves if enabled
     if job.include_saves || job.include_map {
-        add_saves_to_zip(&mut zip, &saves_dir, job.include_saves, job.include_map, &map, &options)?;
+        if let Err(e) = add_saves_to_zip(&mut zip, &saves_dir, job.include_saves, job.include_map, &map, &options) {
+            log::error!("Error adding saves to ZIP: {}", e);
+            return Err(e);
+        }
     }
 
     // Add server INI files if enabled
     if job.include_server_files {
-        add_ini_files_to_zip(&mut zip, &config_dir, &options)?;
+        if let Err(e) = add_ini_files_to_zip(&mut zip, &config_dir, &options) {
+            log::error!("Error adding INI files to ZIP: {}", e);
+            return Err(e);
+        }
     }
 
     // Add plugin configs if enabled
     if job.include_plugin_configs {
-        add_plugin_configs_to_zip(&mut zip, &plugins_dir, &options)?;
+        if let Err(e) = add_plugin_configs_to_zip(&mut zip, &plugins_dir, &options) {
+            log::error!("Error adding plugin configs to ZIP: {}", e);
+            return Err(e);
+        }
     }
 
     // Finish ZIP
@@ -116,23 +125,41 @@ fn add_saves_to_zip(
                 let zip_path = format!("SavedArks/{}", file_name);
 
                 // Try to add file to ZIP, skip if locked or inaccessible
-                // Check if file can be opened before adding to ZIP
+                // Check if file can be opened and read before adding to ZIP
                 match fs::File::open(path) {
                     Ok(mut file) => {
                         let mut buffer = Vec::new();
                         match file.read_to_end(&mut buffer) {
                             Ok(_) => {
                                 // File is readable, now try to add to ZIP
-                                match zip.start_file(zip_path, *options) {
+                                // Only start file entry if we successfully read the file
+                                match zip.start_file(zip_path.clone(), *options) {
                                     Ok(_) => {
+                                        // Write the file data - if this fails, we need to handle it carefully
+                                        // The ZIP writer is now in a state where it expects data
                                         if let Err(e) = zip.write_all(&buffer) {
-                                            log::warn!("Failed to write file {} to ZIP: {}. Skipping.", path.display(), e);
-                                            continue;
+                                            let err_msg = format!("{}", e);
+                                            // If ZIP was closed, we can't continue
+                                            if err_msg.contains("closed") || err_msg.contains("finished") {
+                                                log::error!("ZIP writer was closed while writing file {}. This may indicate the ZIP was finalized prematurely or the underlying file was closed. Backup cannot continue.", path.display());
+                                                return Err(anyhow::anyhow!("ZIP writer was closed: {}", e));
+                                            }
+                                            // Other write errors - could be disk full, permission issues, etc.
+                                            log::error!("Failed to write file {} to ZIP: {}. This may indicate disk full, permission issues, or other I/O problems. Backup cannot continue.", path.display(), e);
+                                            return Err(anyhow::anyhow!("Failed to write file to ZIP: {}", e));
                                         }
+                                        // File successfully added
                                     }
                                     Err(e) => {
-                                        log::warn!("Failed to start file entry for {} in ZIP: {}. Skipping.", path.display(), e);
-                                        continue;
+                                        // Check if ZIP was closed (this shouldn't happen normally)
+                                        let err_msg = format!("{}", e);
+                                        if err_msg.contains("closed") || err_msg.contains("finished") || err_msg.contains("already closed") {
+                                            log::error!("ZIP writer was closed unexpectedly while starting file entry for {}. This indicates the ZIP was finalized prematurely, possibly due to a previous error (disk full, I/O error, etc.). Cannot continue backup.", path.display());
+                                            return Err(anyhow::anyhow!("ZIP writer was closed: {}. This may indicate a previous error (disk full, I/O error) caused the ZIP to be finalized prematurely.", e));
+                                        }
+                                        // Other errors starting file entry - might be recoverable, but log as error
+                                        log::error!("Failed to start file entry for {} in ZIP: {}. This may indicate ZIP corruption or I/O issues.", path.display(), e);
+                                        return Err(anyhow::anyhow!("Failed to start file entry in ZIP: {}", e));
                                     }
                                 }
                             }
@@ -163,27 +190,77 @@ fn add_ini_files_to_zip(
     let game_user_settings_ini = config_dir.join("GameUserSettings.ini");
 
     if game_ini.exists() {
-        zip.start_file("INI Settings/Game.ini", *options)
-            .context("Failed to add Game.ini to ZIP")?;
-        let mut file = fs::File::open(&game_ini)
-            .context("Failed to open Game.ini")?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)
-            .context("Failed to read Game.ini")?;
-        zip.write_all(&buffer)
-            .context("Failed to write Game.ini to ZIP")?;
+        // Check if file can be opened before adding to ZIP
+        match fs::File::open(&game_ini) {
+            Ok(mut file) => {
+                let mut buffer = Vec::new();
+                match file.read_to_end(&mut buffer) {
+                    Ok(_) => {
+                        match zip.start_file("INI Settings/Game.ini", *options) {
+                            Ok(_) => {
+                                if let Err(e) = zip.write_all(&buffer) {
+                                    let err_msg = format!("{}", e);
+                                    if err_msg.contains("closed") || err_msg.contains("finished") {
+                                        return Err(anyhow::anyhow!("ZIP writer was closed while adding Game.ini: {}", e));
+                                    }
+                                    return Err(anyhow::anyhow!("Failed to write Game.ini to ZIP: {}", e));
+                                }
+                            }
+                            Err(e) => {
+                                let err_msg = format!("{}", e);
+                                if err_msg.contains("closed") || err_msg.contains("finished") {
+                                    return Err(anyhow::anyhow!("ZIP writer was closed while starting Game.ini entry: {}", e));
+                                }
+                                return Err(anyhow::anyhow!("Failed to start Game.ini entry in ZIP: {}", e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to read Game.ini: {}. Skipping.", e);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to open Game.ini: {}. Skipping.", e);
+            }
+        }
     }
 
     if game_user_settings_ini.exists() {
-        zip.start_file("INI Settings/GameUserSettings.ini", *options)
-            .context("Failed to add GameUserSettings.ini to ZIP")?;
-        let mut file = fs::File::open(&game_user_settings_ini)
-            .context("Failed to open GameUserSettings.ini")?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)
-            .context("Failed to read GameUserSettings.ini")?;
-        zip.write_all(&buffer)
-            .context("Failed to write GameUserSettings.ini to ZIP")?;
+        // Check if file can be opened before adding to ZIP
+        match fs::File::open(&game_user_settings_ini) {
+            Ok(mut file) => {
+                let mut buffer = Vec::new();
+                match file.read_to_end(&mut buffer) {
+                    Ok(_) => {
+                        match zip.start_file("INI Settings/GameUserSettings.ini", *options) {
+                            Ok(_) => {
+                                if let Err(e) = zip.write_all(&buffer) {
+                                    let err_msg = format!("{}", e);
+                                    if err_msg.contains("closed") || err_msg.contains("finished") {
+                                        return Err(anyhow::anyhow!("ZIP writer was closed while adding GameUserSettings.ini: {}", e));
+                                    }
+                                    return Err(anyhow::anyhow!("Failed to write GameUserSettings.ini to ZIP: {}", e));
+                                }
+                            }
+                            Err(e) => {
+                                let err_msg = format!("{}", e);
+                                if err_msg.contains("closed") || err_msg.contains("finished") {
+                                    return Err(anyhow::anyhow!("ZIP writer was closed while starting GameUserSettings.ini entry: {}", e));
+                                }
+                                return Err(anyhow::anyhow!("Failed to start GameUserSettings.ini entry in ZIP: {}", e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to read GameUserSettings.ini: {}. Skipping.", e);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to open GameUserSettings.ini: {}. Skipping.", e);
+            }
+        }
     }
 
     Ok(())
@@ -211,16 +288,40 @@ fn add_plugin_configs_to_zip(
             // Put in "Plugin" folder with plugin name: Plugin/{plugin_name}/config.json
             let zip_path = format!("Plugin/{}/config.json", plugin_name);
 
-            zip.start_file(zip_path, *options)
-                .with_context(|| format!("Failed to add config.json to ZIP: {}", path.display()))?;
-
-            let mut file = fs::File::open(path)
-                .with_context(|| format!("Failed to open config.json: {}", path.display()))?;
-            let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer)
-                .with_context(|| format!("Failed to read config.json: {}", path.display()))?;
-            zip.write_all(&buffer)
-                .with_context(|| format!("Failed to write config.json to ZIP: {}", path.display()))?;
+            // Check if file can be opened before adding to ZIP
+            match fs::File::open(path) {
+                Ok(mut file) => {
+                    let mut buffer = Vec::new();
+                    match file.read_to_end(&mut buffer) {
+                        Ok(_) => {
+                            match zip.start_file(zip_path, *options) {
+                                Ok(_) => {
+                                    if let Err(e) = zip.write_all(&buffer) {
+                                        let err_msg = format!("{}", e);
+                                        if err_msg.contains("closed") || err_msg.contains("finished") {
+                                            return Err(anyhow::anyhow!("ZIP writer was closed while adding config.json: {}", e));
+                                        }
+                                        return Err(anyhow::anyhow!("Failed to write config.json to ZIP: {}", e));
+                                    }
+                                }
+                                Err(e) => {
+                                    let err_msg = format!("{}", e);
+                                    if err_msg.contains("closed") || err_msg.contains("finished") {
+                                        return Err(anyhow::anyhow!("ZIP writer was closed while starting config.json entry: {}", e));
+                                    }
+                                    return Err(anyhow::anyhow!("Failed to start config.json entry in ZIP: {}", e));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to read config.json {}: {}. Skipping.", path.display(), e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to open config.json {}: {}. Skipping.", path.display(), e);
+                }
+            }
         }
     }
 
