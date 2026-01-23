@@ -1,6 +1,6 @@
 [package]
 name = "arkade-manager"
-version = "2.1.2"
+version = "2.1.3"
 description = "ARKADE Manager - ARK Survival Ascended Server Management Tool"
 authors = ["ARKADE Manager"]
 license = ""
