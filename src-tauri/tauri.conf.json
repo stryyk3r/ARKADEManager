@@ -1,6 +1,6 @@
 {
   "productName": "ARKADE Manager",
-  "version": "2.0.2",
+  "version": "2.0.4",
   "identifier": "com.arkade.manager",
   "build": {
     "beforeDevCommand": "npm run dev",
