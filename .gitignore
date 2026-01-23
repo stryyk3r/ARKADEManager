@@ -1,0 +1,23 @@
+# Logs
+*.log
+logs/
+
+# Dependencies
+node_modules/
+target/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tauri
+src-tauri/target/
+

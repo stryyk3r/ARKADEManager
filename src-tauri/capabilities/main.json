@@ -1,0 +1,10 @@
+{
+  "identifier": "main-capability",
+  "description": "Main window capability with dialog permissions",
+  "windows": ["*"],
+  "permissions": [
+    "core:default",
+    "dialog:default"
+  ]
+}
+
