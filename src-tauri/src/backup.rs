@@ -12,6 +12,25 @@ use walkdir::WalkDir;
 use zip::write::{FileOptions, ZipWriter};
 use zip::CompressionMethod;
 
+/// Check if an error is due to insufficient disk space
+fn is_disk_full_error(error: &anyhow::Error) -> bool {
+    let error_str = format!("{}", error);
+    let error_lower = error_str.to_lowercase();
+    
+    // Check for common disk full error messages
+    error_lower.contains("no space") ||
+    error_lower.contains("disk full") ||
+    error_lower.contains("not enough space") ||
+    error_lower.contains("insufficient") ||
+    error_lower.contains("error 112") || // Windows ERROR_DISK_FULL
+    error_lower.contains("error code: 112") ||
+    // Check for Windows error code in the error chain
+    error.chain().any(|e| {
+        let e_str = format!("{}", e).to_lowercase();
+        e_str.contains("112") || e_str.contains("no space") || e_str.contains("disk full")
+    })
+}
+
 pub async fn create_backup(job: &Job, _app_data: &AppData) -> Result<u64> {
     log::info!("Starting backup for job: {}", job.name);
 
@@ -26,12 +45,83 @@ pub async fn create_backup(job: &Job, _app_data: &AppData) -> Result<u64> {
 
     // Create backup filename with timestamp
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-    let filename = format!("{}_{}_{}.zip", job.name, map.folder_name(), timestamp);
+    let filename = format!("{}_{}.zip", job.name, timestamp);
     let backup_path = Path::new(&job.destination_dir).join(&filename);
     let temp_path = backup_path.with_extension("zip.tmp");
 
+    // Ensure destination directory exists
+    if let Some(parent) = backup_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create destination directory: {}", parent.display()))?;
+    }
+
+    // Attempt backup with retry on disk full
+    let result = attempt_backup(
+        &temp_path,
+        &backup_path,
+        &saves_dir,
+        &config_dir,
+        &plugins_dir,
+        job,
+        &map,
+    ).await;
+
+    match result {
+        Ok(file_size) => {
+            log::info!("Backup completed: {} ({} bytes)", backup_path.display(), file_size);
+            // Cleanup old backups after successful backup
+            cleanup_old_backups(&job.destination_dir, job.retention_days)?;
+            Ok(file_size)
+        }
+        Err(e) if is_disk_full_error(&e) => {
+            log::warn!("Backup failed due to insufficient disk space. Cleaning up old backups and retrying...");
+            
+            // Cleanup old backups to free space
+            cleanup_old_backups(&job.destination_dir, job.retention_days)
+                .context("Failed to cleanup old backups")?;
+            
+            log::info!("Retrying backup after cleanup...");
+            
+            // Retry the backup
+            let retry_result = attempt_backup(
+                &temp_path,
+                &backup_path,
+                &saves_dir,
+                &config_dir,
+                &plugins_dir,
+                job,
+                &map,
+            ).await;
+            
+            match retry_result {
+                Ok(file_size) => {
+                    log::info!("Backup completed after cleanup: {} ({} bytes)", backup_path.display(), file_size);
+                    Ok(file_size)
+                }
+                Err(retry_err) => {
+                    if is_disk_full_error(&retry_err) {
+                        Err(anyhow::anyhow!("Backup failed even after cleaning up old backups. Still insufficient disk space: {}", retry_err))
+                    } else {
+                        Err(retry_err)
+                    }
+                }
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
+async fn attempt_backup(
+    temp_path: &Path,
+    backup_path: &Path,
+    saves_dir: &Path,
+    config_dir: &Path,
+    plugins_dir: &Path,
+    job: &Job,
+    map: &crate::map::Map,
+) -> Result<u64> {
     // Create ZIP file
-    let file = fs::File::create(&temp_path)
+    let file = fs::File::create(temp_path)
         .with_context(|| format!("Failed to create backup file: {}", temp_path.display()))?;
     let mut zip = ZipWriter::new(file);
     let options = FileOptions::default()
@@ -40,7 +130,7 @@ pub async fn create_backup(job: &Job, _app_data: &AppData) -> Result<u64> {
 
     // Add saves if enabled
     if job.include_saves || job.include_map {
-        if let Err(e) = add_saves_to_zip(&mut zip, &saves_dir, job.include_saves, job.include_map, &map, &options) {
+        if let Err(e) = add_saves_to_zip(&mut zip, saves_dir, job.include_saves, job.include_map, map, &options) {
             log::error!("Error adding saves to ZIP: {}", e);
             return Err(e);
         }
@@ -48,7 +138,7 @@ pub async fn create_backup(job: &Job, _app_data: &AppData) -> Result<u64> {
 
     // Add server INI files if enabled
     if job.include_server_files {
-        if let Err(e) = add_ini_files_to_zip(&mut zip, &config_dir, &options) {
+        if let Err(e) = add_ini_files_to_zip(&mut zip, config_dir, &options) {
             log::error!("Error adding INI files to ZIP: {}", e);
             return Err(e);
         }
@@ -56,7 +146,7 @@ pub async fn create_backup(job: &Job, _app_data: &AppData) -> Result<u64> {
 
     // Add plugin configs if enabled
     if job.include_plugin_configs {
-        if let Err(e) = add_plugin_configs_to_zip(&mut zip, &plugins_dir, &options) {
+        if let Err(e) = add_plugin_configs_to_zip(&mut zip, plugins_dir, &options) {
             log::error!("Error adding plugin configs to ZIP: {}", e);
             return Err(e);
         }
@@ -67,21 +157,16 @@ pub async fn create_backup(job: &Job, _app_data: &AppData) -> Result<u64> {
         .context("Failed to finalize ZIP file")?;
 
     // Get file size before atomic rename
-    let file_size = fs::metadata(&temp_path)
+    let file_size = fs::metadata(temp_path)
         .context("Failed to get backup file metadata")?
         .len();
 
     // Atomic rename
-    fs::rename(&temp_path, &backup_path)
+    fs::rename(temp_path, backup_path)
         .with_context(|| format!("Failed to rename temp file to: {}", backup_path.display()))?;
 
     // Verify integrity
-    verify_zip_integrity(&backup_path)?;
-
-    log::info!("Backup completed: {} ({} bytes)", backup_path.display(), file_size);
-
-    // Cleanup old backups
-    cleanup_old_backups(&job.destination_dir, job.retention_days)?;
+    verify_zip_integrity(backup_path)?;
 
     Ok(file_size)
 }
