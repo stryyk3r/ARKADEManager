@@ -27,10 +27,10 @@ impl Map {
             Map::Aberration => "Aberration_WP",
             Map::Extinction => "Extinction_WP",
             Map::Valguero => "Valguero_WP",
-            Map::Svartalfheim => "Svartalfheim_WP",
+            Map::Svartalfheim => "Svartalfheim",  // No _WP suffix (player-created map)
             Map::Astraeos => "Astraeos_WP",
-            Map::Forglar => "Forglar",  // No _WP suffix
-            Map::Amissa => "Amissa",    // No _WP suffix
+            Map::Forglar => "Forglar",  // No _WP suffix (player-created map)
+            Map::Amissa => "Amissa",    // No _WP suffix (player-created map)
             Map::LostColony => "LostColony_WP",
         }
     }
@@ -85,6 +85,20 @@ impl Map {
             "Amissa" => Some(Map::Amissa),
             "LostColony" => Some(Map::LostColony),
             _ => None,
+        }
+    }
+    
+    /// Returns the expected map file name (with or without _WP suffix)
+    pub fn map_file_name(&self) -> String {
+        match self {
+            // Player-created maps don't have _WP suffix
+            Map::Svartalfheim | Map::Forglar | Map::Amissa => {
+                format!("{}.ark", self.base_name())
+            },
+            // Official maps have _WP suffix
+            _ => {
+                format!("{}_WP.ark", self.base_name())
+            }
         }
     }
 }

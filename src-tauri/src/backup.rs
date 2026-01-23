@@ -89,8 +89,8 @@ fn add_saves_to_zip(
         return Ok(());
     }
 
-    // Expected map file name: always "{BaseName}_WP.ark" (e.g., "Forglar_WP.ark", "Ragnarok_WP.ark")
-    let expected_map_file = format!("{}_WP.ark", map.base_name());
+    // Expected map file name: player-created maps don't have _WP suffix
+    let expected_map_file = map.map_file_name();
 
     for entry in WalkDir::new(saves_dir).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();

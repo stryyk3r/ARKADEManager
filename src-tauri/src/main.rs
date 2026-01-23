@@ -504,6 +504,43 @@ async fn install_plugins(
     plugins::install_plugins(source_plugin_paths, destination_plugin_paths)
 }
 
+// Custom filter to suppress winit warnings
+struct WinitFilter {
+    inner: Box<dyn log::Log>,
+}
+
+impl log::Log for WinitFilter {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        // Filter out winit warnings
+        if metadata.level() == log::Level::Warn {
+            let target = metadata.target();
+            if target.contains("winit") || target.contains("tauri_wry") {
+                return false;
+            }
+        }
+        self.inner.enabled(metadata)
+    }
+
+    fn log(&self, record: &log::Record) {
+        // Filter out winit-specific warning messages
+        if record.level() == log::Level::Warn {
+            let msg = format!("{}", record.args());
+            if msg.contains("NewEvents emitted without explicit RedrawEventsCleared")
+                || msg.contains("RedrawEventsCleared emitted without explicit MainEventsCleared")
+                || record.target().contains("winit")
+                || record.target().contains("tauri_wry")
+            {
+                return;
+            }
+        }
+        self.inner.log(record);
+    }
+
+    fn flush(&self) {
+        self.inner.flush();
+    }
+}
+
 fn main() {
     // Initialize logger with file output
     let app_data = AppData::new().unwrap_or_else(|e| {
@@ -512,15 +549,34 @@ fn main() {
     });
     let log_file = app_data.get_logs_dir().join("arkade_manager.log");
     
-    simplelog::WriteLogger::init(
+    // Configure logger
+    let log_config = simplelog::ConfigBuilder::new()
+        .set_time_level(log::LevelFilter::Off)
+        .set_thread_level(log::LevelFilter::Off)
+        .set_target_level(log::LevelFilter::Off)
+        .set_location_level(log::LevelFilter::Off)
+        .build();
+    
+    let file = std::fs::File::create(&log_file).unwrap_or_else(|e| {
+        eprintln!("Failed to create log file: {}", e);
+        std::process::exit(1);
+    });
+    
+    // Create the base logger
+    let base_logger = simplelog::WriteLogger::new(
         log::LevelFilter::Info,
-        simplelog::Config::default(),
-        std::fs::File::create(&log_file).unwrap_or_else(|e| {
-            eprintln!("Failed to create log file: {}", e);
-            std::process::exit(1);
-        }),
-    )
-    .unwrap_or(());
+        log_config,
+        file,
+    );
+    
+    // Wrap logger with filter to suppress winit warnings
+    let filtered_logger = WinitFilter {
+        inner: Box::new(base_logger),
+    };
+    
+    log::set_boxed_logger(Box::new(filtered_logger))
+        .map(|()| log::set_max_level(log::LevelFilter::Info))
+        .unwrap_or(());
     
     log::info!("ARKADE Manager starting up");
 
