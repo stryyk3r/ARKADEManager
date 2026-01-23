@@ -88,18 +88,10 @@ impl Map {
         }
     }
     
-    /// Returns the expected map file name (with or without _WP suffix)
+    /// Returns the expected map file name
+    /// All maps have _WP suffix in the .ark file name, regardless of folder name
     pub fn map_file_name(&self) -> String {
-        match self {
-            // Player-created maps don't have _WP suffix
-            Map::Svartalfheim | Map::Forglar | Map::Amissa => {
-                format!("{}.ark", self.base_name())
-            },
-            // Official maps have _WP suffix
-            _ => {
-                format!("{}_WP.ark", self.base_name())
-            }
-        }
+        format!("{}_WP.ark", self.base_name())
     }
 }
 

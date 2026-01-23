@@ -98,7 +98,7 @@ fn add_saves_to_zip(
         return Ok(());
     }
 
-    // Expected map file name: player-created maps don't have _WP suffix
+    // Expected map file name: all maps have _WP suffix in the .ark file name
     let expected_map_file = map.map_file_name();
 
     for entry in WalkDir::new(saves_dir).into_iter().filter_map(|e| e.ok()) {
