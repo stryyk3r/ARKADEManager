@@ -1,6 +1,6 @@
 {
   "productName": "ARKADE Manager",
-  "version": "2.0.3",
+  "version": "2.0.2",
   "identifier": "com.arkade.manager",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -42,7 +42,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/stryyk3r/ARKADEManager/releases/latest/download/{{target}}/{{current_version}}"
+        "https://api.github.com/repos/stryyk3r/ARKADEManager/releases/latest"
       ],
       "dialog": true,
       "pubkey": ""

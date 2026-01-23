@@ -1,6 +1,6 @@
 [package]
 name = "arkade-manager"
-version = "2.0.3"
+version = "2.0.2"
 description = "ARKADE Manager - ARK Survival Ascended Server Management Tool"
 authors = ["ARKADE Manager"]
 license = ""
@@ -27,6 +27,8 @@ tokio = { version = "1.0", features = ["full"] }
 log = "0.4"
 env_logger = "0.11"
 simplelog = { version = "0.12" }
+reqwest = { version = "0.12", features = ["json"] }
+semver = "1.0"
 
 [dev-dependencies]
 tempfile = "3.8"
