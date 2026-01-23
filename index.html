@@ -22,6 +22,8 @@
       --accent-hover: #005a9e;
       --error: #d32f2f;
       --success: #388e3c;
+      --version-box: #ff00ff;
+      --update-box: #00ffff;
     }
     
     [data-theme="dark"] {
@@ -670,6 +672,47 @@
       color: var(--text-secondary);
       font-size: 14px;
     }
+    
+    .version-bar {
+      display: flex;
+      gap: 10px;
+      padding: 8px 20px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      align-items: center;
+    }
+    
+    .version-box {
+      background: #ff00ff;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: default;
+      user-select: none;
+    }
+    
+    .update-box {
+      background: #00ffff;
+      color: #000;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+      display: none;
+      transition: opacity 0.2s;
+    }
+    
+    .update-box:hover {
+      opacity: 0.8;
+    }
+    
+    .update-box.show {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -681,6 +724,11 @@
         <h1>ARKADE Manager</h1>
       </div>
       <button class="theme-toggle" id="themeToggle">Toggle Theme</button>
+    </div>
+    
+    <div class="version-bar">
+      <div class="version-box" id="versionBox">Version 2.0.0</div>
+      <div class="update-box" id="updateBox">Update Available - Click to Install</div>
     </div>
     
     <div class="tabs">

@@ -1,6 +1,6 @@
 {
   "name": "arkade-manager",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "ARKADE Manager - ARK Survival Ascended Server Management Tool",
   "type": "module",
   "scripts": {
@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
-    "@tauri-apps/plugin-dialog": "^2.0.0"
+    "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-updater": "^2.0.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

@@ -6,6 +6,7 @@ let currentJobId = null;
 let jobsRefreshInterval = null;
 let statusUpdateInterval = null;
 let logsRefreshInterval = null;
+let updateCheckInterval = null;
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
@@ -59,6 +60,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initial status and logs
   await updateStatus();
   await refreshLogs();
+  
+  // Load and display version
+  await loadVersion();
+  
+  // Check for updates on startup and then every hour
+  await checkForUpdates();
+  updateCheckInterval = setInterval(checkForUpdates, 3600000); // 1 hour
+  
+  // Setup update box click handler
+  const updateBox = document.getElementById('updateBox');
+  if (updateBox) {
+    updateBox.addEventListener('click', handleUpdateClick);
+  }
   
   // Ensure job form is hidden on load
   const jobFormContainer = document.getElementById('jobFormContainer');
@@ -1087,3 +1101,65 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// Version and Update Functions
+async function loadVersion() {
+  try {
+    const version = await invoke('get_app_version');
+    const versionBox = document.getElementById('versionBox');
+    if (versionBox) {
+      versionBox.textContent = `Version ${version}`;
+    }
+  } catch (e) {
+    console.error('Failed to load version:', e);
+  }
+}
+
+async function checkForUpdates() {
+  try {
+    const app = getCurrent();
+    const update = await check(app);
+    
+    const updateBox = document.getElementById('updateBox');
+    if (updateBox && update) {
+      updateBox.textContent = `Update Available (v${update.version}) - Click to Install`;
+      updateBox.classList.add('show');
+    } else if (updateBox) {
+      updateBox.classList.remove('show');
+    }
+  } catch (e) {
+    console.error('Failed to check for updates:', e);
+    // Hide update box on error
+    const updateBox = document.getElementById('updateBox');
+    if (updateBox) {
+      updateBox.classList.remove('show');
+    }
+  }
+}
+
+async function handleUpdateClick() {
+  const updateBox = document.getElementById('updateBox');
+  if (!updateBox || !updateBox.classList.contains('show')) {
+    return;
+  }
+  
+  const confirmed = await confirm('Install update now? The application will restart after installation.', {
+    title: 'Update Available',
+    kind: 'info'
+  });
+  
+  if (!confirmed) {
+    return;
+  }
+  
+  try {
+    updateBox.textContent = 'Installing update...';
+    updateBox.style.pointerEvents = 'none';
+    
+    await invoke('install_update');
+    // App will restart automatically after installation
+  } catch (e) {
+    alert('Failed to install update: ' + e);
+    updateBox.textContent = 'Update Available - Click to Install';
+    updateBox.style.pointerEvents = 'auto';
+  }
+}

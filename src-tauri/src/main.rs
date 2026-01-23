@@ -194,10 +194,9 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
                     .await
                     .map_err(|e| format!("Failed to install update: {}", e))?;
                     
-                    // Restart the app
+                    // Restart the app (this may not return on some platforms)
                     app.restart();
-                    // Note: restart() may or may not return depending on platform
-                    // Return Ok to satisfy the function signature
+                    // If restart() returns, exit the process
                     std::process::exit(0);
                 }
                 Ok(None) => Err("No update available".to_string()),
