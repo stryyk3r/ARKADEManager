@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use tauri::AppHandle;
 use tauri::Emitter;
 
@@ -119,17 +119,22 @@ impl Scheduler {
             let job = self.queue.pop_front().unwrap();
             
             // Dedup: skip if run within last 2 minutes
-            if let Some(last_run) = self.last_run_times.get(&job.id) {
-                if last_run.elapsed().unwrap_or(Duration::from_secs(0)) < Duration::from_secs(120) {
-                    log::info!("Skipping job {} (dedup)", job.name);
-                    self.emit_status();
-                    return Ok(());
+            // Check the job's actual last_run_at from the database, not the in-memory map
+            // This ensures we use the completion time, not the start time
+            if let Some(last_run_str) = &job.last_run_at {
+                if let Ok(last_run_dt) = DateTime::parse_from_rfc3339(last_run_str) {
+                    let elapsed = Utc::now().signed_duration_since(last_run_dt.with_timezone(&Utc));
+                    if elapsed.num_seconds() < 120 {
+                        log::info!("Skipping job {} (dedup - last run {} seconds ago)", job.name, elapsed.num_seconds());
+                        self.emit_status();
+                        return Ok(());
+                    }
                 }
             }
 
             // Mark as running
             self.current_job = Some(job.id.clone());
-            self.last_run_times.insert(job.id.clone(), SystemTime::now());
+            // Don't update last_run_times here - it will be updated when the backup completes
 
             // Run backup in background
             let job_clone = job.clone();
