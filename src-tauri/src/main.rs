@@ -147,6 +147,68 @@ async fn get_status(state: tauri::State<'_, AppState>) -> Result<scheduler::Stat
 }
 
 #[tauri::command]
+async fn get_app_version() -> Result<String, String> {
+    Ok(env!("CARGO_PKG_VERSION").to_string())
+}
+
+#[tauri::command]
+async fn check_for_updates(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    
+    match app.updater_builder().build() {
+        Ok(updater) => {
+            match updater.check().await {
+                Ok(update) => {
+                    if let Some(update) = update {
+                        Ok(serde_json::json!({
+                            "available": true,
+                            "version": update.version,
+                            "body": update.body.unwrap_or_default()
+                        }))
+                    } else {
+                        Ok(serde_json::json!({
+                            "available": false
+                        }))
+                    }
+                }
+                Err(e) => Err(format!("Failed to check for updates: {}", e))
+            }
+        }
+        Err(e) => Err(format!("Failed to build updater: {}", e))
+    }
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    
+    match app.updater_builder().build() {
+        Ok(updater) => {
+            match updater.check().await {
+                Ok(Some(update)) => {
+                    update.download_and_install(|chunk_length, content_length| {
+                        log::info!("Downloaded {} of {} bytes", chunk_length, content_length.unwrap_or(0));
+                    }, || {
+                        log::info!("Update downloaded, installing...");
+                    })
+                    .await
+                    .map_err(|e| format!("Failed to install update: {}", e))?;
+                    
+                    // Restart the app
+                    app.restart();
+                    // Note: restart() may or may not return depending on platform
+                    // Return Ok to satisfy the function signature
+                    std::process::exit(0);
+                }
+                Ok(None) => Err("No update available".to_string()),
+                Err(e) => Err(format!("Failed to check for updates: {}", e))
+            }
+        }
+        Err(e) => Err(format!("Failed to build updater: {}", e))
+    }
+}
+
+#[tauri::command]
 async fn read_logs(lines: Option<usize>) -> Result<String, String> {
     app_data::read_logs(lines.unwrap_or(100)).map_err(|e| e.to_string())
 }
@@ -191,6 +253,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let app_data = Arc::new(Mutex::new(AppData::new()?));
             let scheduler = Arc::new(Mutex::new(Scheduler::new(app.handle().clone())));
@@ -237,7 +300,10 @@ fn main() {
             read_logs,
             list_source_plugins,
             discover_plugin_destinations,
-            install_plugins
+            install_plugins,
+            get_app_version,
+            check_for_updates,
+            install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
