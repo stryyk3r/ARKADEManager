@@ -492,8 +492,51 @@ async fn list_source_plugins(source_path: String) -> Result<Vec<plugins::SourceP
 }
 
 #[tauri::command]
-async fn discover_plugin_destinations() -> Result<Vec<plugins::DestinationServer>, String> {
-    plugins::discover_destinations()
+async fn discover_plugin_destinations(state: tauri::State<'_, AppState>) -> Result<Vec<plugins::DestinationServer>, String> {
+    use crate::validation::derive_plugins_dir;
+    use std::collections::HashSet;
+
+    // Use case-insensitive key to avoid duplicates when same path appears as C:\ArkServers\... and C:\arkservers\...
+    let mut seen = HashSet::new();
+    let mut destinations = Vec::new();
+
+    let norm = |p: &str| p.to_lowercase();
+
+    // Add destinations from backup job roots (so servers show even if C:\arkservers\asaservers doesn't exist)
+    {
+        let app_data = state.app_data.lock().await;
+        if let Ok(jobs) = app_data.list_jobs() {
+            for job in jobs {
+                let root = &job.root_dir;
+                let plugin_path = derive_plugins_dir(root);
+                let plugin_path_str = plugin_path.to_string_lossy().to_string();
+                if seen.insert(norm(&plugin_path_str)) {
+                    let name = std::path::Path::new(root)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    destinations.push(plugins::DestinationServer {
+                        name,
+                        path: root.clone(),
+                        plugin_path: plugin_path_str,
+                    });
+                }
+            }
+        }
+    }
+
+    // Add from C:\arkservers\asaservers, skipping any we already have (case-insensitive)
+    if let Ok(from_disk) = plugins::discover_destinations() {
+        for d in from_disk {
+            if seen.insert(norm(&d.plugin_path)) {
+                destinations.push(d);
+            }
+        }
+    }
+
+    destinations.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(destinations)
 }
 
 #[tauri::command]
@@ -501,6 +544,14 @@ async fn install_plugins(
     source_plugin_paths: Vec<String>,
     destination_plugin_paths: Vec<String>,
 ) -> Result<plugins::InstallResult, String> {
+    log::info!(
+        "install_plugins: {} source(s), {} destination(s)",
+        source_plugin_paths.len(),
+        destination_plugin_paths.len()
+    );
+    if source_plugin_paths.is_empty() || destination_plugin_paths.is_empty() {
+        log::warn!("install_plugins: missing source or destination paths");
+    }
     plugins::install_plugins(source_plugin_paths, destination_plugin_paths)
 }
 

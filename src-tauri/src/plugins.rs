@@ -169,12 +169,22 @@ fn copy_folder_recursive(
                 // Check if file already exists
                 if dest_path.exists() {
                     files_overwritten += 1;
+                    // On Windows, overwriting a read-only file can fail. Clear read-only so the copy can replace it.
+                    if let Ok(meta) = fs::metadata(&dest_path) {
+                        let mut p = meta.permissions();
+                        p.set_readonly(false);
+                        let _ = fs::set_permissions(&dest_path, p);
+                    }
                 } else {
                     files_copied += 1;
                 }
                 
-                fs::copy(&entry_path, &dest_path)
-                    .map_err(|e| format!("Failed to copy file {:?}: {}", entry_path, e))?;
+                if fs::copy(&entry_path, &dest_path).is_err() {
+                    // If overwrite failed (e.g. read-only or lock), try remove-then-copy
+                    let _ = fs::remove_file(&dest_path);
+                    fs::copy(&entry_path, &dest_path)
+                        .map_err(|e| format!("Failed to copy file {:?}: {}", entry_path, e))?;
+                }
             }
         }
     } else {

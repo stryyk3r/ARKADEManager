@@ -1,3 +1,4 @@
+import './style.css';
 import { invoke } from '@tauri-apps/api/core';
 import { open, confirm } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
@@ -74,6 +75,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateBox.addEventListener('click', handleUpdateClick);
   }
   
+  // Initialize Plugin Toggle tab
+  await loadPluginToggleServers();
+  
+  const pluginToggleServerSelect = document.getElementById('pluginToggleServerSelect');
+  if (pluginToggleServerSelect) {
+    pluginToggleServerSelect.addEventListener('change', async (e) => {
+      const serverRoot = e.target.value;
+      const container = document.getElementById('pluginToggleFoldersContainer');
+      
+      if (serverRoot) {
+        container.style.display = 'block';
+        await loadPluginFolders(serverRoot);
+      } else {
+        container.style.display = 'none';
+      }
+    });
+  }
+  
   // Ensure job form is hidden on load
   const jobFormContainer = document.getElementById('jobFormContainer');
   if (jobFormContainer) {
@@ -105,6 +124,11 @@ function switchTab(tabName) {
   // Load plugin destinations when new plugins tab is opened
   if (tabName === 'new-plugins' && typeof window.refreshPluginDestinations === 'function') {
     window.refreshPluginDestinations();
+  }
+  
+  // Refresh server list when Plugin Toggle tab is opened
+  if (tabName === 'plugin-toggle') {
+    loadPluginToggleServers();
   }
 }
 
@@ -603,7 +627,15 @@ function renderJobsTable(jobs) {
     row.insertCell().textContent = job.name;
     row.insertCell().textContent = `${job.interval_value} ${job.interval_unit}`;
     row.insertCell().textContent = job.next_run_at ? new Date(job.next_run_at).toLocaleString() : 'N/A';
-    row.insertCell().textContent = job.last_run_at ? new Date(job.last_run_at).toLocaleString() : 'Never';
+    
+    // Last Save column - show ERROR in red bold if there was an error
+    const lastSaveCell = row.insertCell();
+    if (job.last_error) {
+      lastSaveCell.innerHTML = '<span style="color: red; font-weight: bold;">ERROR</span>';
+    } else {
+      lastSaveCell.textContent = job.last_run_at ? new Date(job.last_run_at).toLocaleString() : 'Never';
+    }
+    
     row.insertCell().textContent = job.last_file_size ? formatFileSize(job.last_file_size) : 'N/A';
     
     // Add ellipsis menu
@@ -812,7 +844,7 @@ function renderDestinations() {
   const container = document.getElementById('pluginDestinationList');
   
   if (pluginDestinations.length === 0) {
-    container.innerHTML = '<div class="empty-state">No ARK servers found in C:\\arkservers\\asaservers</div>';
+    container.innerHTML = '<div class="empty-state">No ARK servers found. Add backup jobs with a server root, or ensure C:\\arkservers\\asaservers exists.</div>';
     return;
   }
   
@@ -883,21 +915,17 @@ window.proceedWithPluginInstallation = async () => {
     return;
   }
   
-  // Close confirmation modal first
-  closePluginConfirmModal();
-  
-  // Small delay to ensure modal is closed before showing results
-  await new Promise(resolve => setTimeout(resolve, 100));
-  
+  // Copy data before closing modal (closePluginConfirmModal sets pendingInstallation = null)
   const { sourcePaths, destPaths, selectedPlugins, selectedServers, sourceCheckboxes, destCheckboxes } = pendingInstallation;
   pendingInstallation = null;
+  const modal = document.getElementById('pluginConfirmModal');
+  if (modal) modal.classList.remove('show');
   
   const installBtn = document.getElementById('installPluginsBtn');
   installBtn.disabled = true;
   installBtn.textContent = 'Installing...';
   
   try {
-    console.log('Starting plugin installation...');
     const result = await invoke('install_plugins', {
       sourcePluginPaths: sourcePaths,
       destinationPluginPaths: destPaths
@@ -919,8 +947,10 @@ window.proceedWithPluginInstallation = async () => {
     console.error('Error installing plugins:', error);
     showPluginResultsError(error);
   } finally {
-    installBtn.disabled = false;
-    installBtn.textContent = 'Install Selected Plugins';
+    if (installBtn) {
+      installBtn.disabled = false;
+      installBtn.textContent = 'Install Selected Plugins';
+    }
   }
 };
 
@@ -943,7 +973,7 @@ function showPluginConfirmModal(selectedPlugins, selectedServers) {
   html += '</div>';
   
   html += '<div style="padding: 12px; background: rgba(255, 193, 7, 0.1); border: 1px solid #ffc107; border-radius: 4px; color: #f57c00;">';
-  html += '<strong>⚠ Note:</strong> Existing plugin files will be overwritten.';
+  html += '<strong>⚠ Note:</strong> Files with the same name will be overwritten. Other files in the destination folder are left unchanged.';
   html += '</div>';
   
   content.innerHTML = html;
@@ -1077,7 +1107,11 @@ function showPluginResultsError(error) {
 
 window.closePluginResultsModal = () => {
   const modal = document.getElementById('pluginResultsModal');
+  if (!modal) return;
   modal.classList.remove('show');
+  modal.style.display = '';
+  modal.style.visibility = '';
+  modal.style.opacity = '';
 };
 
 // Close modals when clicking outside
@@ -1118,23 +1152,26 @@ async function checkForUpdates() {
   try {
     console.log('Checking for updates...');
     const result = await invoke('check_for_updates');
-    console.log('Update check result:', result);
+    console.log('Update check result:', JSON.stringify(result));
     const updateBox = document.getElementById('updateBox');
+    
+    if (!updateBox) {
+      console.error('Update box element not found!');
+      return;
+    }
     
     if (result && result.available) {
       console.log('Update available:', result.version);
-      if (updateBox) {
-        updateBox.textContent = `Update Available (v${result.version}) - Click to Install`;
-        updateBox.classList.add('show');
-      }
+      updateBox.textContent = `Update Available (v${result.version}) - Click to Install`;
+      updateBox.classList.add('show');
+      console.log('Update box should now be visible');
     } else {
-      console.log('No update available');
-      if (updateBox) {
-        updateBox.classList.remove('show');
-      }
+      console.log('No update available. Result:', result);
+      updateBox.classList.remove('show');
     }
   } catch (e) {
     console.error('Failed to check for updates:', e);
+    console.error('Error details:', e.toString());
     // Hide update box on error
     const updateBox = document.getElementById('updateBox');
     if (updateBox) {
@@ -1142,6 +1179,241 @@ async function checkForUpdates() {
     }
   }
 }
+
+// Plugin Toggle Functions
+let selectedPluginFolders = new Set();
+
+async function loadPluginToggleServers() {
+  try {
+    const servers = await invoke('get_plugin_server_roots');
+    const select = document.getElementById('pluginToggleServerSelect');
+    select.innerHTML = '<option value="">-- Select a server --</option>';
+    
+    servers.forEach(server => {
+      const option = document.createElement('option');
+      option.value = server;
+      option.textContent = server;
+      select.appendChild(option);
+    });
+  } catch (e) {
+    console.error('Failed to load servers:', e);
+  }
+}
+
+async function loadPluginFolders(serverRoot) {
+  try {
+    const folders = await invoke('list_plugin_folders', { serverRoot });
+    const container = document.getElementById('pluginToggleFoldersList');
+    container.innerHTML = '';
+    
+    if (folders.length === 0) {
+      container.innerHTML = '<div class="empty-state">No plugin folders found</div>';
+      return;
+    }
+    
+    folders.forEach(folder => {
+      const item = document.createElement('div');
+      item.className = `plugin-folder-item ${folder.is_disabled ? 'disabled' : ''}`;
+      
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = folder.full_path;
+      checkbox.dataset.baseName = folder.base_name;
+      checkbox.addEventListener('change', updateToggleButtons);
+      
+      const label = document.createElement('label');
+      label.className = 'folder-name';
+      label.textContent = folder.name;
+      label.style.cursor = 'pointer';
+      label.style.margin = 0;
+      label.style.flex = 1;
+      
+      label.addEventListener('click', (e) => {
+        e.preventDefault();
+        checkbox.checked = !checkbox.checked;
+        checkbox.dispatchEvent(new Event('change'));
+      });
+      
+      item.appendChild(checkbox);
+      item.appendChild(label);
+      container.appendChild(item);
+    });
+    
+    selectedPluginFolders.clear();
+    updateToggleButtons();
+  } catch (e) {
+    console.error('Failed to load plugin folders:', e);
+    const container = document.getElementById('pluginToggleFoldersList');
+    container.innerHTML = `<div class="empty-state" style="color: var(--error-color);">Error: ${e}</div>`;
+  }
+}
+
+function updateToggleButtons() {
+  const checkboxes = document.querySelectorAll('#pluginToggleFoldersList input[type="checkbox"]:checked');
+  const hasSelection = checkboxes.length > 0;
+  
+  document.getElementById('toggleCurrentServerBtn').disabled = !hasSelection;
+  document.getElementById('toggleAllServersBtn').disabled = !hasSelection;
+}
+
+async function togglePluginsForCurrentServer() {
+  console.log('togglePluginsForCurrentServer called');
+  const checkboxes = document.querySelectorAll('#pluginToggleFoldersList input[type="checkbox"]:checked');
+  console.log('Selected checkboxes:', checkboxes.length);
+  
+  if (checkboxes.length === 0) {
+    alert('Please select at least one folder to toggle');
+    return;
+  }
+  
+  try {
+    const confirmed = await confirm(`Toggle ${checkboxes.length} folder(s) for the current server?`, {
+      title: 'Toggle Plugins',
+      kind: 'info'
+    });
+    
+    if (!confirmed) {
+      console.log('User cancelled toggle');
+      return;
+    }
+    
+    const serverRoot = document.getElementById('pluginToggleServerSelect').value;
+    console.log('Server root:', serverRoot);
+    const errors = [];
+    let successCount = 0;
+    
+    for (const checkbox of checkboxes) {
+      try {
+        console.log('Toggling folder:', checkbox.value);
+        const newPath = await invoke('toggle_plugin_folder', { folderPath: checkbox.value });
+        console.log('Folder toggled successfully, new path:', newPath);
+        successCount++;
+      } catch (e) {
+        console.error('Error toggling folder:', checkbox.value, e);
+        errors.push(`${checkbox.dataset.baseName}: ${e}`);
+      }
+    }
+    
+    if (errors.length > 0) {
+      alert('Some folders failed to toggle:\n' + errors.join('\n'));
+    } else {
+      console.log(`Successfully toggled ${successCount} folder(s)`);
+    }
+    
+    // Reload folders
+    await loadPluginFolders(serverRoot);
+  } catch (e) {
+    console.error('Error in togglePluginsForCurrentServer:', e);
+    alert('Failed to toggle plugins: ' + e);
+  }
+}
+
+async function togglePluginsForAllServers() {
+  console.log('togglePluginsForAllServers called');
+  const checkboxes = document.querySelectorAll('#pluginToggleFoldersList input[type="checkbox"]:checked');
+  console.log('Selected checkboxes:', checkboxes.length);
+  
+  if (checkboxes.length === 0) {
+    alert('Please select at least one folder to toggle');
+    return;
+  }
+  
+  // Get the current state of selected folders from the current server
+  const serverRoot = document.getElementById('pluginToggleServerSelect').value;
+  if (!serverRoot) {
+    alert('Please select a server first');
+    return;
+  }
+  
+  // Get current folder states
+  const folders = await invoke('list_plugin_folders', { serverRoot });
+  const folderStates = new Map();
+  folders.forEach(folder => {
+    folderStates.set(folder.base_name, folder.is_disabled);
+  });
+  
+  // Determine target states based on current server
+  const foldersToToggle = [];
+  for (const checkbox of checkboxes) {
+    const baseName = checkbox.dataset.baseName;
+    const currentStateDisabled = folderStates.get(baseName) || false;
+    const targetStateDisabled = !currentStateDisabled; // Toggle to opposite state
+    
+    foldersToToggle.push({
+      baseName,
+      targetStateDisabled,
+      currentState: currentStateDisabled ? 'disabled' : 'enabled',
+      targetState: targetStateDisabled ? 'disabled' : 'enabled'
+    });
+  }
+  
+  const uniqueFolders = [];
+  const seen = new Set();
+  for (const folder of foldersToToggle) {
+    if (!seen.has(folder.baseName)) {
+      seen.add(folder.baseName);
+      uniqueFolders.push(folder);
+    }
+  }
+  
+  console.log('Folders to toggle across all servers:', uniqueFolders);
+  
+  const folderList = uniqueFolders.map(f => 
+    `${f.baseName} (${f.currentState} → ${f.targetState})`
+  ).join('\n');
+  
+  try {
+    const confirmed = await confirm(
+      `Set ${uniqueFolders.length} folder(s) across all servers to match current server state?\n\n` +
+      `Folders:\n${folderList}`,
+      {
+        title: 'Toggle Plugins for All Servers',
+        kind: 'info'
+      }
+    );
+    
+    if (!confirmed) {
+      console.log('User cancelled toggle');
+      return;
+    }
+    
+    const errors = [];
+    const toggledPaths = [];
+    
+    for (const folder of uniqueFolders) {
+      try {
+        console.log(`Setting ${folder.baseName} to ${folder.targetState ? 'disabled' : 'enabled'} across all servers`);
+        const paths = await invoke('toggle_plugin_for_all_servers', { 
+          baseFolderName: folder.baseName,
+          targetStateDisabled: folder.targetStateDisabled
+        });
+        console.log('Toggled paths:', paths);
+        toggledPaths.push(...paths);
+      } catch (e) {
+        console.error('Error toggling folder:', folder.baseName, e);
+        errors.push(`${folder.baseName}: ${e}`);
+      }
+    }
+    
+    if (errors.length > 0) {
+      alert('Some folders failed to toggle:\n' + errors.join('\n'));
+    } else {
+      alert(`Successfully set ${toggledPaths.length} folder(s) across all servers`);
+    }
+    
+    // Reload folders for current server
+    if (serverRoot) {
+      await loadPluginFolders(serverRoot);
+    }
+  } catch (e) {
+    console.error('Error in togglePluginsForAllServers:', e);
+    alert('Failed to toggle plugins: ' + e);
+  }
+}
+
+// Make functions globally accessible for onclick handlers (must be after function declarations)
+window.togglePluginsForCurrentServer = togglePluginsForCurrentServer;
+window.togglePluginsForAllServers = togglePluginsForAllServers;
 
 async function handleUpdateClick() {
   const updateBox = document.getElementById('updateBox');
