@@ -11,22 +11,35 @@ jobs:
       - name: Send release to Discord
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          RELEASE_NAME: ${{ github.event.release.name }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          BRANCH: ${{ github.event.release.target_commitish }}
+          TAG: ${{ github.event.release.tag_name }}
           RELEASE_URL: ${{ github.event.release.html_url }}
-          RELEASE_BODY: ${{ github.event.release.body || 'No description provided.' }}
+          RELEASE_BODY: ${{ github.event.release.body || '' }}
+          RELEASE_NAME: ${{ github.event.release.name || github.event.release.tag_name }}
+          AUTHOR_LOGIN: ${{ github.event.release.author.login || github.actor }}
+          AUTHOR_AVATAR: ${{ github.event.release.author.avatar_url || '' }}
         run: |
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          FIRST_LINE=$(echo "$RELEASE_BODY" | head -n 1)
+          if [ -z "$FIRST_LINE" ]; then FIRST_LINE="$RELEASE_NAME"; fi
+          if [ -z "$FIRST_LINE" ]; then FIRST_LINE="Release"; fi
+
           BODY=$(jq -n \
-            --arg tag "$RELEASE_TAG" \
-            --arg name "$RELEASE_NAME" \
+            --arg repo "$REPO_NAME" \
+            --arg branch "$BRANCH" \
+            --arg sha "$SHORT_SHA" \
+            --arg tag "$TAG" \
+            --arg line "$FIRST_LINE" \
+            --arg author "$AUTHOR_LOGIN" \
             --arg url "$RELEASE_URL" \
-            --arg body "$RELEASE_BODY" \
+            --arg avatar "$AUTHOR_AVATAR" \
             '{
-              "content": "New release: **\($name)** (\($tag))",
               "embeds": [{
-                "title": ($name + " (" + $tag + ")"),
+                "author": (if $avatar != "" then { "name": $author, "icon_url": $avatar } else { "name": $author } end),
+                "title": ("[" + $repo + ":" + $branch + "] 1 new release"),
                 "url": $url,
-                "description": (if ($body | length) > 4000 then ($body[0:3997] + "...") else $body end),
+                "description": ($sha + " " + $tag + " - " + $line + ". - " + $author),
                 "color": 5814783
               }]
             }')
