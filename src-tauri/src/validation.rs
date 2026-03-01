@@ -14,11 +14,28 @@ pub fn validate_job(job: &JobInput) -> Result<()> {
         anyhow::bail!("Destination directory does not exist: {}", job.destination_dir);
     }
 
-    // Validate map
+    if job.job_type == "minecraft" {
+        validate_interval_retention(job)?;
+        // Minecraft with RCON: require host, port, password for save-off/save-on flow
+        let has_host = job.rcon_host.as_ref().map(|h| !h.trim().is_empty()).unwrap_or(false);
+        let has_port = job.rcon_port.map(|p| p > 0).unwrap_or(false);
+        let has_password = job.rcon_password.as_ref().map(|p| !p.is_empty()).unwrap_or(false);
+        if !has_host {
+            anyhow::bail!("Minecraft backup requires RCON host (IP or hostname)");
+        }
+        if !has_port {
+            anyhow::bail!("Minecraft backup requires RCON port (e.g. 25575)");
+        }
+        if !has_password {
+            anyhow::bail!("Minecraft backup requires RCON password");
+        }
+        return Ok(());
+    }
+
+    // ARK: validate map and derived paths
     Map::from_str(&job.map)
         .with_context(|| format!("Invalid map: {}", job.map))?;
 
-    // Validate derived paths
     let map = Map::from_str(&job.map).unwrap();
     let config_dir = derive_config_dir(&job.root_dir);
     let saves_dir = derive_saves_dir(&job.root_dir, map.folder_name());
@@ -59,20 +76,21 @@ pub fn validate_job(job: &JobInput) -> Result<()> {
         }
     }
 
-    // Validate interval
+    validate_interval_retention(job)?;
+
+    Ok(())
+}
+
+fn validate_interval_retention(job: &JobInput) -> Result<()> {
     if job.interval_value == 0 {
         anyhow::bail!("Interval value must be greater than 0");
     }
-
     if !matches!(job.interval_unit.as_str(), "minutes" | "hours" | "days") {
         anyhow::bail!("Invalid interval unit: {}", job.interval_unit);
     }
-
-    // Validate retention
     if job.retention_days == 0 {
         anyhow::bail!("Retention days must be greater than 0");
     }
-
     Ok(())
 }
 

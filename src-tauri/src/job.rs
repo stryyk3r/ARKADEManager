@@ -3,13 +3,19 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+fn default_job_type() -> String {
+    "ark".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Job {
     pub id: String,
+    #[serde(default = "default_job_type")]
+    pub job_type: String, // "ark" | "minecraft"
     pub name: String,
     pub root_dir: String,
     pub destination_dir: String,
-    pub map: String, // Store as string for JSON compatibility
+    pub map: String, // Store as string for JSON compatibility (empty for minecraft)
     pub include_saves: bool,
     pub include_map: bool,
     pub include_server_files: bool,
@@ -22,11 +28,19 @@ pub struct Job {
     pub next_run_at: Option<String>,
     pub last_file_size: Option<u64>,
     pub last_error: Option<String>,
+    /// Minecraft only: RCON host (IP or hostname) for save-off/save-on
+    pub rcon_host: Option<String>,
+    /// Minecraft only: RCON port
+    pub rcon_port: Option<u16>,
+    /// Minecraft only: RCON password
+    pub rcon_password: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct JobInput {
     pub id: Option<String>,
+    #[serde(default = "default_job_type")]
+    pub job_type: String, // "ark" | "minecraft"
     pub name: String,
     pub root_dir: String,
     pub destination_dir: String,
@@ -39,6 +53,9 @@ pub struct JobInput {
     pub interval_unit: String,
     pub retention_days: u32,
     pub enabled: bool,
+    pub rcon_host: Option<String>,
+    pub rcon_port: Option<u16>,
+    pub rcon_password: Option<String>,
 }
 
 impl Job {
@@ -53,6 +70,7 @@ impl Job {
 
         Self {
             id,
+            job_type: input.job_type.clone(),
             name: input.name,
             root_dir: input.root_dir,
             destination_dir: input.destination_dir,
@@ -69,6 +87,9 @@ impl Job {
             next_run_at: next_run.map(|dt| dt.to_rfc3339()),
             last_file_size: None,
             last_error: None,
+            rcon_host: input.rcon_host,
+            rcon_port: input.rcon_port,
+            rcon_password: input.rcon_password,
         }
     }
 
@@ -139,6 +160,7 @@ mod tests {
     fn test_job_from_input() {
         let input = JobInput {
             id: None,
+            job_type: "ark".to_string(),
             name: "Test Job".to_string(),
             root_dir: r"C:\test".to_string(),
             destination_dir: r"C:\backups".to_string(),
@@ -151,6 +173,9 @@ mod tests {
             interval_unit: "minutes".to_string(),
             retention_days: 7,
             enabled: true,
+            rcon_host: None,
+            rcon_port: None,
+            rcon_password: None,
         };
 
         let job = Job::from_input(input);
@@ -163,6 +188,7 @@ mod tests {
     fn test_job_update_after_run() {
         let mut input = JobInput {
             id: None,
+            job_type: "ark".to_string(),
             name: "Test".to_string(),
             root_dir: r"C:\test".to_string(),
             destination_dir: r"C:\backups".to_string(),
@@ -175,6 +201,9 @@ mod tests {
             interval_unit: "hours".to_string(),
             retention_days: 7,
             enabled: true,
+            rcon_host: None,
+            rcon_port: None,
+            rcon_password: None,
         };
 
         let mut job = Job::from_input(input);

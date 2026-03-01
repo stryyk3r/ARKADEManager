@@ -4,6 +4,7 @@ import { open, confirm } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 
 let currentJobId = null;
+let currentJobType = 'ark'; // 'ark' | 'minecraft' - used when editing
 let jobsRefreshInterval = null;
 let statusUpdateInterval = null;
 let logsRefreshInterval = null;
@@ -55,9 +56,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   
   await listen('job_updated', (event) => {
+    hideBackupProgress();
     refreshJobs();
   });
-  
+
+  await listen('backup_progress', (event) => {
+    const p = event.payload || {};
+    const jobName = p.job_name || 'Backup';
+    const percent = Math.min(100, Math.max(0, Number(p.percent) || 0));
+    showBackupProgress(jobName, percent);
+  });
+
+  await listen('backup_failed', (event) => {
+    hideBackupProgress();
+    const p = event.payload || {};
+    const name = p.job_name || 'Backup';
+    const err = p.error || 'Unknown error';
+    const lower = String(err).toLowerCase();
+    const isWarning = lower.includes('completed with warnings') || lower.includes('warning');
+    const header = isWarning ? 'Backup warning' : 'Backup failed';
+    alert(`${header}: ${name}\n\n${err}\n\nThe backup will not run again until the next scheduled time.`);
+  });
+
   // Initial status and logs
   await updateStatus();
   await refreshLogs();
@@ -175,11 +195,16 @@ window.pickDestinationDir = async () => {
 };
 
 let currentWizardStep = 1;
-const totalWizardSteps = 4;
+let backupType = null; // 'ark' | 'minecraft' - set when user completes step 1
+
+function getTotalWizardSteps() {
+  return backupType === 'minecraft' ? 4 : 5;
+}
 
 window.showAddJobForm = () => {
   currentJobId = null;
   currentWizardStep = 1;
+  backupType = null;
   resetWizard();
   document.getElementById('addJobModal').classList.add('show');
   updateWizardStep();
@@ -192,6 +217,9 @@ window.closeAddJobModal = () => {
 
 function resetWizard() {
   currentWizardStep = 1;
+  backupType = null;
+  document.getElementById('wizardBackupTypeArk').checked = false;
+  document.getElementById('wizardBackupTypeMinecraft').checked = false;
   document.getElementById('wizardRootDir').value = '';
   document.getElementById('wizardDestinationDir').value = '';
   document.getElementById('wizardMapSelect').value = '';
@@ -204,51 +232,84 @@ function resetWizard() {
   document.getElementById('wizardIntervalUnit').value = 'minutes';
   document.getElementById('wizardRetentionDays').value = '7';
   document.getElementById('wizardEnabled').checked = false;
+  const mcName = document.getElementById('wizardMinecraftJobName');
+  const mcInterval = document.getElementById('wizardMinecraftIntervalValue');
+  const mcUnit = document.getElementById('wizardMinecraftIntervalUnit');
+  const mcEnabled = document.getElementById('wizardMinecraftEnabled');
+  const mcRconHost = document.getElementById('wizardMinecraftRconHost');
+  const mcRconPort = document.getElementById('wizardMinecraftRconPort');
+  const mcRconPassword = document.getElementById('wizardMinecraftRconPassword');
+  if (mcName) mcName.value = '';
+  if (mcInterval) mcInterval.value = '1';
+  if (mcUnit) mcUnit.value = 'minutes';
+  if (mcEnabled) mcEnabled.checked = false;
+  if (mcRconHost) mcRconHost.value = '';
+  if (mcRconPort) mcRconPort.value = '25575';
+  if (mcRconPassword) mcRconPassword.value = '';
   clearWizardErrors();
 }
 
 function clearWizardErrors() {
+  const backupTypeEl = document.getElementById('wizardBackupTypeError');
+  if (backupTypeEl) backupTypeEl.textContent = '';
   document.getElementById('wizardRootDirError').textContent = '';
   document.getElementById('wizardDestinationDirError').textContent = '';
   document.getElementById('wizardMapError').textContent = '';
   document.getElementById('wizardJobNameError').textContent = '';
+  const mcErr = document.getElementById('wizardMinecraftJobNameError');
+  if (mcErr) mcErr.textContent = '';
+  const rconHostErr = document.getElementById('wizardMinecraftRconHostError');
+  if (rconHostErr) rconHostErr.textContent = '';
+  const rconPortErr = document.getElementById('wizardMinecraftRconPortError');
+  if (rconPortErr) rconPortErr.textContent = '';
+  const rconPwErr = document.getElementById('wizardMinecraftRconPasswordError');
+  if (rconPwErr) rconPwErr.textContent = '';
 }
 
 function updateWizardStep() {
-  // Hide all steps
-  for (let i = 1; i <= totalWizardSteps; i++) {
-    document.getElementById(`wizardStep${i}`).classList.remove('active');
+  const totalSteps = getTotalWizardSteps();
+  const stepIds = ['wizardStep1', 'wizardStep2', 'wizardStep3', 'wizardStep4', 'wizardStep5', 'wizardStepMinecraftConfig'];
+  stepIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+  });
+
+  // Show current step panel
+  if (currentWizardStep === 1) {
+    document.getElementById('wizardStep1').classList.add('active');
+  } else if (backupType === 'minecraft' && currentWizardStep === 4) {
+    document.getElementById('wizardStepMinecraftConfig').classList.add('active');
+  } else {
+    document.getElementById(`wizardStep${currentWizardStep}`).classList.add('active');
   }
-  // Show current step
-  document.getElementById(`wizardStep${currentWizardStep}`).classList.add('active');
-  
-  // Update step indicators
-  for (let i = 1; i <= totalWizardSteps; i++) {
+
+  // Update step indicators (show 2 dots for Minecraft, 5 for Ark / step 1)
+  for (let i = 1; i <= 5; i++) {
     const dot = document.getElementById(`step${i}Dot`);
     const connector = document.getElementById(`connector${i}`);
-    if (i < currentWizardStep) {
-      dot.classList.remove('active');
-      dot.classList.add('completed');
-      if (connector) connector.classList.add('completed');
-    } else if (i === currentWizardStep) {
-      dot.classList.add('active');
-      dot.classList.remove('completed');
-      if (connector) connector.classList.remove('completed');
-    } else {
+    const visible = i <= totalSteps;
+    if (dot) {
+      dot.style.display = visible ? '' : 'none';
       dot.classList.remove('active', 'completed');
-      if (connector) connector.classList.remove('completed');
+      if (i < currentWizardStep) dot.classList.add('completed');
+      else if (i === currentWizardStep) dot.classList.add('active');
+    }
+    if (connector) {
+      connector.style.display = visible && i < totalSteps ? '' : 'none';
+      connector.classList.toggle('completed', i < currentWizardStep);
     }
   }
-  
+
   // Update buttons
   document.getElementById('wizardPrevBtn').style.display = currentWizardStep > 1 ? 'block' : 'none';
-  document.getElementById('wizardNextBtn').style.display = currentWizardStep < totalWizardSteps ? 'block' : 'none';
-  document.getElementById('wizardFinishBtn').style.display = currentWizardStep === totalWizardSteps ? 'block' : 'none';
+  document.getElementById('wizardNextBtn').style.display = currentWizardStep < totalSteps ? 'block' : 'none';
+  document.getElementById('wizardFinishBtn').style.display = currentWizardStep === totalSteps ? 'block' : 'none';
 }
 
 window.wizardNextStep = () => {
   if (validateCurrentStep()) {
-    if (currentWizardStep < totalWizardSteps) {
+    const totalSteps = getTotalWizardSteps();
+    if (currentWizardStep < totalSteps) {
       currentWizardStep++;
       updateWizardStep();
     }
@@ -258,6 +319,7 @@ window.wizardNextStep = () => {
 window.wizardPreviousStep = () => {
   if (currentWizardStep > 1) {
     currentWizardStep--;
+    if (currentWizardStep === 1) backupType = null;
     updateWizardStep();
   }
 };
@@ -265,38 +327,77 @@ window.wizardPreviousStep = () => {
 function validateCurrentStep() {
   clearWizardErrors();
   let isValid = true;
-  
+
   switch (currentWizardStep) {
-    case 1:
-      const rootDir = document.getElementById('wizardRootDir').value.trim();
-      if (!rootDir) {
-        document.getElementById('wizardRootDirError').textContent = 'Server root directory is required';
+    case 1: {
+      const arkChecked = document.getElementById('wizardBackupTypeArk').checked;
+      const minecraftChecked = document.getElementById('wizardBackupTypeMinecraft').checked;
+      if (!arkChecked && !minecraftChecked) {
+        document.getElementById('wizardBackupTypeError').textContent = 'Please choose ARK or Minecraft';
         isValid = false;
+      } else {
+        backupType = minecraftChecked ? 'minecraft' : 'ark';
       }
       break;
+    }
     case 2:
+      if (backupType === 'ark') {
+        const rootDir = document.getElementById('wizardRootDir').value.trim();
+        if (!rootDir) {
+          document.getElementById('wizardRootDirError').textContent = 'Server root directory is required';
+          isValid = false;
+        }
+      }
+      break;
+    case 3: {
       const destDir = document.getElementById('wizardDestinationDir').value.trim();
       if (!destDir) {
         document.getElementById('wizardDestinationDirError').textContent = 'Destination directory is required';
         isValid = false;
       }
       break;
-    case 3:
-      const map = document.getElementById('wizardMapSelect').value;
-      if (!map) {
-        document.getElementById('wizardMapError').textContent = 'Map selection is required';
-        isValid = false;
+    }
+    case 4:
+      if (backupType === 'minecraft') {
+        const mcJobName = document.getElementById('wizardMinecraftJobName').value.trim();
+        if (!mcJobName) {
+          document.getElementById('wizardMinecraftJobNameError').textContent = 'Job name is required';
+          isValid = false;
+        }
+        const rconHost = document.getElementById('wizardMinecraftRconHost').value.trim();
+        if (!rconHost) {
+          document.getElementById('wizardMinecraftRconHostError').textContent = 'RCON host is required';
+          isValid = false;
+        }
+        const rconPortVal = document.getElementById('wizardMinecraftRconPort').value.trim();
+        const rconPort = parseInt(rconPortVal, 10);
+        if (!rconPortVal || isNaN(rconPort) || rconPort < 1 || rconPort > 65535) {
+          document.getElementById('wizardMinecraftRconPortError').textContent = 'RCON port must be 1-65535';
+          isValid = false;
+        }
+        const rconPassword = document.getElementById('wizardMinecraftRconPassword').value;
+        if (!rconPassword) {
+          document.getElementById('wizardMinecraftRconPasswordError').textContent = 'RCON password is required';
+          isValid = false;
+        }
+      } else {
+        const map = document.getElementById('wizardMapSelect').value;
+        if (!map) {
+          document.getElementById('wizardMapError').textContent = 'Map selection is required';
+          isValid = false;
+        }
       }
       break;
-    case 4:
+    case 5: {
       const jobName = document.getElementById('wizardJobName').value.trim();
       if (!jobName) {
         document.getElementById('wizardJobNameError').textContent = 'Job name is required';
         isValid = false;
       }
       break;
+    }
   }
-  
+
   return isValid;
 }
 
@@ -338,9 +439,30 @@ window.wizardFinish = async () => {
   if (!validateCurrentStep()) {
     return;
   }
-  
-  try {
-    const job = {
+
+  let job;
+  if (backupType === 'minecraft') {
+    job = {
+      job_type: 'minecraft',
+      name: document.getElementById('wizardMinecraftJobName').value.trim(),
+      root_dir: document.getElementById('wizardRootDir').value.trim(),
+      destination_dir: document.getElementById('wizardDestinationDir').value.trim(),
+      map: '',
+      include_saves: false,
+      include_map: false,
+      include_server_files: false,
+      include_plugin_configs: false,
+      interval_value: parseInt(document.getElementById('wizardMinecraftIntervalValue').value) || 1,
+      interval_unit: document.getElementById('wizardMinecraftIntervalUnit').value,
+      retention_days: 30,
+      enabled: document.getElementById('wizardMinecraftEnabled').checked,
+      rcon_host: document.getElementById('wizardMinecraftRconHost').value.trim(),
+      rcon_port: parseInt(document.getElementById('wizardMinecraftRconPort').value, 10) || 25575,
+      rcon_password: document.getElementById('wizardMinecraftRconPassword').value
+    };
+  } else {
+    job = {
+      job_type: 'ark',
       name: document.getElementById('wizardJobName').value.trim(),
       root_dir: document.getElementById('wizardRootDir').value.trim(),
       destination_dir: document.getElementById('wizardDestinationDir').value.trim(),
@@ -354,7 +476,9 @@ window.wizardFinish = async () => {
       retention_days: parseInt(document.getElementById('wizardRetentionDays').value) || 7,
       enabled: document.getElementById('wizardEnabled').checked
     };
-    
+  }
+
+  try {
     await invoke('add_job', { job });
     closeAddJobModal();
     await refreshJobs();
@@ -501,21 +625,62 @@ window.runJobNow = async (jobId) => {
   }
 };
 
+window.openBackupLocation = async (destinationDir) => {
+  if (!destinationDir || !destinationDir.trim()) {
+    alert('No backup location set for this job');
+    return;
+  }
+  try {
+    await invoke('open_backup_location', { path: destinationDir });
+  } catch (e) {
+    alert('Failed to open backup location: ' + e);
+  }
+};
+
+window.openLogsFolder = async () => {
+  try {
+    await invoke('open_logs_folder');
+  } catch (e) {
+    alert('Failed to open logs folder: ' + e);
+  }
+};
+
 window.clearForm = () => {
   document.getElementById('rootDir').value = '';
   document.getElementById('destinationDir').value = '';
   document.getElementById('mapSelect').value = '';
   document.getElementById('jobName').value = '';
+  document.getElementById('jobNameMinecraft').value = '';
   document.getElementById('includeSaves').checked = false;
   document.getElementById('includeMap').checked = false;
   document.getElementById('includeServerFiles').checked = false;
   document.getElementById('includePluginConfigs').checked = false;
   document.getElementById('intervalValue').value = '1';
   document.getElementById('intervalUnit').value = 'minutes';
+  document.getElementById('intervalValueMinecraft').value = '1';
+  document.getElementById('intervalUnitMinecraft').value = 'minutes';
   document.getElementById('retentionDays').value = '7';
   document.getElementById('enabled').checked = false;
+  setJobFormVisibilityForType('ark');
   clearAllErrors();
 };
+
+function showBackupProgress(jobName, percent) {
+  const card = document.getElementById('backupProgressCard');
+  const nameEl = document.getElementById('backupProgressJobName');
+  const pctEl = document.getElementById('backupProgressPct');
+  const barEl = document.getElementById('backupProgressBar');
+  if (!card || !nameEl || !pctEl || !barEl) return;
+  card.style.display = 'block';
+  nameEl.textContent = jobName;
+  pctEl.textContent = percent + '%';
+  barEl.style.width = percent + '%';
+}
+
+function hideBackupProgress() {
+  const card = document.getElementById('backupProgressCard');
+  if (card) card.style.display = 'none';
+}
 
 window.refreshJobs = async () => {
   try {
@@ -568,9 +733,8 @@ window.clearLogsView = () => {
 function collectJobData() {
   const rootDir = document.getElementById('rootDir').value.trim();
   const destinationDir = document.getElementById('destinationDir').value.trim();
-  const map = document.getElementById('mapSelect').value;
-  const name = document.getElementById('jobName').value.trim();
-  
+  const isMinecraft = currentJobType === 'minecraft';
+
   if (!rootDir) {
     showError('rootDirError', 'Server root directory is required');
     return null;
@@ -579,87 +743,157 @@ function collectJobData() {
     showError('destinationDirError', 'Destination directory is required');
     return null;
   }
-  if (!map) {
-    showError('mapError', 'Map selection is required');
-    return null;
+
+  let name, intervalValue, intervalUnit, map, includeSaves, includeMap, includeServerFiles, includePluginConfigs, retentionDays;
+
+  if (isMinecraft) {
+    name = document.getElementById('jobNameMinecraft').value.trim();
+    if (!name) {
+      showError('jobNameMinecraftError', 'Job name is required');
+      return null;
+    }
+    const rconHost = document.getElementById('rconHostMinecraft').value.trim();
+    const rconPortVal = document.getElementById('rconPortMinecraft').value.trim();
+    const rconPort = parseInt(rconPortVal, 10);
+    const rconPassword = document.getElementById('rconPasswordMinecraft').value;
+    if (!rconHost) {
+      showError('jobNameMinecraftError', 'RCON host is required');
+      return null;
+    }
+    if (!rconPortVal || isNaN(rconPort) || rconPort < 1 || rconPort > 65535) {
+      showError('jobNameMinecraftError', 'RCON port must be 1-65535');
+      return null;
+    }
+    if (!rconPassword) {
+      showError('jobNameMinecraftError', 'RCON password is required');
+      return null;
+    }
+    intervalValue = parseInt(document.getElementById('intervalValueMinecraft').value) || 1;
+    intervalUnit = document.getElementById('intervalUnitMinecraft').value;
+    retentionDays = 30;
+    map = '';
+    includeSaves = false;
+    includeMap = false;
+    includeServerFiles = false;
+    includePluginConfigs = false;
+  } else {
+    map = document.getElementById('mapSelect').value;
+    name = document.getElementById('jobName').value.trim();
+    if (!map) {
+      showError('mapError', 'Map selection is required');
+      return null;
+    }
+    if (!name) {
+      showError('jobNameError', 'Job name is required');
+      return null;
+    }
+    intervalValue = parseInt(document.getElementById('intervalValue').value) || 1;
+    intervalUnit = document.getElementById('intervalUnit').value;
+    retentionDays = parseInt(document.getElementById('retentionDays').value) || 7;
+    includeSaves = document.getElementById('includeSaves').checked;
+    includeMap = document.getElementById('includeMap').checked;
+    includeServerFiles = document.getElementById('includeServerFiles').checked;
+    includePluginConfigs = document.getElementById('includePluginConfigs').checked;
   }
-  if (!name) {
-    showError('jobNameError', 'Job name is required');
-    return null;
-  }
-  
+
   clearAllErrors();
-  
-  return {
+
+  const payload = {
+    job_type: currentJobType,
     name,
     root_dir: rootDir,
     destination_dir: destinationDir,
     map,
-    include_saves: document.getElementById('includeSaves').checked,
-    include_map: document.getElementById('includeMap').checked,
-    include_server_files: document.getElementById('includeServerFiles').checked,
-    include_plugin_configs: document.getElementById('includePluginConfigs').checked,
-    interval_value: parseInt(document.getElementById('intervalValue').value) || 1,
-    interval_unit: document.getElementById('intervalUnit').value,
-    retention_days: parseInt(document.getElementById('retentionDays').value) || 7,
+    include_saves: includeSaves,
+    include_map: includeMap,
+    include_server_files: includeServerFiles,
+    include_plugin_configs: includePluginConfigs,
+    interval_value: intervalValue,
+    interval_unit: intervalUnit,
+    retention_days: retentionDays,
     enabled: document.getElementById('enabled').checked
   };
+  if (isMinecraft) {
+    payload.rcon_host = document.getElementById('rconHostMinecraft').value.trim();
+    payload.rcon_port = parseInt(document.getElementById('rconPortMinecraft').value, 10) || 25575;
+    payload.rcon_password = document.getElementById('rconPasswordMinecraft').value;
+  }
+  return payload;
 }
 
 function renderJobsTable(jobs) {
-  const tbody = document.getElementById('jobsTableBody');
-  tbody.innerHTML = '';
-  
-  if (jobs.length === 0) {
-    const row = tbody.insertRow();
-    const cell = row.insertCell();
-    cell.colSpan = 6;
-    cell.textContent = 'No jobs configured';
-    cell.style.textAlign = 'center';
-    cell.style.color = 'var(--text-secondary)';
-    return;
-  }
-  
-  jobs.forEach(job => {
+  const arkJobs = (jobs || []).filter(j => (j.job_type || 'ark') === 'ark');
+  const minecraftJobs = (jobs || []).filter(j => j.job_type === 'minecraft');
+
+  const arkSection = document.getElementById('backupSectionArk');
+  const minecraftSection = document.getElementById('backupSectionMinecraft');
+  const arkTable = document.getElementById('jobsTableArk');
+  const minecraftTable = document.getElementById('jobsTableMinecraft');
+  const arkEmpty = document.getElementById('arkJobsEmpty');
+  const minecraftEmpty = document.getElementById('minecraftJobsEmpty');
+
+  const emptyAll = document.getElementById('backupEmptyAll');
+  const hasAny = (jobs || []).length > 0;
+
+  if (emptyAll) emptyAll.style.display = hasAny ? 'none' : 'block';
+
+  if (arkSection) arkSection.style.display = hasAny && arkJobs.length > 0 ? '' : 'none';
+  if (arkTable) arkTable.style.display = arkJobs.length > 0 ? '' : 'none';
+  if (arkEmpty) arkEmpty.style.display = arkJobs.length > 0 ? 'none' : 'block';
+
+  if (minecraftSection) minecraftSection.style.display = hasAny && minecraftJobs.length > 0 ? '' : 'none';
+  if (minecraftTable) minecraftTable.style.display = minecraftJobs.length > 0 ? '' : 'none';
+  if (minecraftEmpty) minecraftEmpty.style.display = minecraftJobs.length > 0 ? 'none' : 'block';
+
+  const tbodyArk = document.getElementById('jobsTableBodyArk');
+  const tbodyMinecraft = document.getElementById('jobsTableBodyMinecraft');
+  if (tbodyArk) tbodyArk.innerHTML = '';
+  if (tbodyMinecraft) tbodyMinecraft.innerHTML = '';
+
+  function appendJobRow(tbody, job) {
+    if (!tbody) return;
     const row = tbody.insertRow();
     row.dataset.jobId = job.id;
-    
+
     row.insertCell().textContent = job.name;
     row.insertCell().textContent = `${job.interval_value} ${job.interval_unit}`;
     row.insertCell().textContent = job.next_run_at ? new Date(job.next_run_at).toLocaleString() : 'N/A';
-    
-    // Last Save column - show ERROR in red bold if there was an error
+
     const lastSaveCell = row.insertCell();
     if (job.last_error) {
-      lastSaveCell.innerHTML = '<span style="color: red; font-weight: bold;">ERROR</span>';
+      const msg = String(job.last_error || '');
+      const lower = msg.toLowerCase();
+      const isWarning = lower.includes('completed with warnings') || lower.includes('warning');
+      lastSaveCell.innerHTML = isWarning
+        ? '<span style="color: #d18b00; font-weight: bold;">WARNING</span>'
+        : '<span style="color: red; font-weight: bold;">ERROR</span>';
+      lastSaveCell.title = msg;
     } else {
       lastSaveCell.textContent = job.last_run_at ? new Date(job.last_run_at).toLocaleString() : 'Never';
     }
-    
+
     row.insertCell().textContent = job.last_file_size ? formatFileSize(job.last_file_size) : 'N/A';
-    
-    // Add ellipsis menu
+
     const menuCell = row.insertCell();
     menuCell.style.textAlign = 'center';
     menuCell.style.padding = '4px';
-    
+
     const menuContainer = document.createElement('div');
     menuContainer.className = 'job-menu';
-    
+
     const menuButton = document.createElement('button');
     menuButton.className = 'job-menu-button';
     menuButton.textContent = '⋯';
     menuButton.onclick = (e) => {
       e.stopPropagation();
-      // Close other menus
       document.querySelectorAll('.job-menu-dropdown').forEach(d => d.classList.remove('show'));
       const dropdown = menuContainer.querySelector('.job-menu-dropdown');
       dropdown.classList.toggle('show');
     };
-    
+
     const dropdown = document.createElement('div');
     dropdown.className = 'job-menu-dropdown';
-    
+
     const runItem = document.createElement('button');
     runItem.className = 'job-menu-item';
     runItem.textContent = 'Run Now';
@@ -668,7 +902,16 @@ function renderJobsTable(jobs) {
       dropdown.classList.remove('show');
       runJobNow(job.id);
     };
-    
+
+    const backupLocationItem = document.createElement('button');
+    backupLocationItem.className = 'job-menu-item';
+    backupLocationItem.textContent = 'Backup Location';
+    backupLocationItem.onclick = (e) => {
+      e.stopPropagation();
+      dropdown.classList.remove('show');
+      openBackupLocation(job.destination_dir);
+    };
+
     const editItem = document.createElement('button');
     editItem.className = 'job-menu-item';
     editItem.textContent = 'Edit';
@@ -677,7 +920,7 @@ function renderJobsTable(jobs) {
       dropdown.classList.remove('show');
       updateJob(job.id);
     };
-    
+
     const deleteItem = document.createElement('button');
     deleteItem.className = 'job-menu-item danger';
     deleteItem.textContent = 'Delete';
@@ -686,17 +929,19 @@ function renderJobsTable(jobs) {
       dropdown.classList.remove('show');
       deleteJob(job.id);
     };
-    
+
     dropdown.appendChild(runItem);
+    dropdown.appendChild(backupLocationItem);
     dropdown.appendChild(editItem);
     dropdown.appendChild(deleteItem);
-    
     menuContainer.appendChild(menuButton);
     menuContainer.appendChild(dropdown);
     menuCell.appendChild(menuContainer);
-  });
-  
-  // Close menus when clicking outside
+  }
+
+  arkJobs.forEach(job => appendJobRow(tbodyArk, job));
+  minecraftJobs.forEach(job => appendJobRow(tbodyMinecraft, job));
+
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.job-menu')) {
       document.querySelectorAll('.job-menu-dropdown').forEach(d => d.classList.remove('show'));
@@ -704,20 +949,43 @@ function renderJobsTable(jobs) {
   });
 }
 
+function setJobFormVisibilityForType(jobType) {
+  const isMinecraft = (jobType || 'ark') === 'minecraft';
+  const arkEl = document.getElementById('jobFormArkFields');
+  const mcEl = document.getElementById('jobFormMinecraftFields');
+  if (arkEl) arkEl.style.display = isMinecraft ? 'none' : '';
+  if (mcEl) mcEl.style.display = isMinecraft ? '' : 'none';
+}
+
 function loadJobIntoForm(job) {
   currentJobId = job.id;
+  currentJobType = job.job_type || 'ark';
+  const isMinecraft = currentJobType === 'minecraft';
+
   document.getElementById('rootDir').value = job.root_dir || '';
   document.getElementById('destinationDir').value = job.destination_dir || '';
-  document.getElementById('mapSelect').value = job.map || '';
-  document.getElementById('jobName').value = job.name || '';
-  document.getElementById('includeSaves').checked = job.include_saves || false;
-  document.getElementById('includeMap').checked = job.include_map || false;
-  document.getElementById('includeServerFiles').checked = job.include_server_files || false;
-  document.getElementById('includePluginConfigs').checked = job.include_plugin_configs || false;
-  document.getElementById('intervalValue').value = job.interval_value || 1;
-  document.getElementById('intervalUnit').value = job.interval_unit || 'minutes';
-  document.getElementById('retentionDays').value = job.retention_days || 7;
   document.getElementById('enabled').checked = job.enabled || false;
+
+  if (isMinecraft) {
+    document.getElementById('jobNameMinecraft').value = job.name || '';
+    document.getElementById('intervalValueMinecraft').value = job.interval_value || 1;
+    document.getElementById('intervalUnitMinecraft').value = job.interval_unit || 'minutes';
+    document.getElementById('rconHostMinecraft').value = job.rcon_host || '';
+    document.getElementById('rconPortMinecraft').value = job.rcon_port || 25575;
+    document.getElementById('rconPasswordMinecraft').value = job.rcon_password || '';
+  } else {
+    document.getElementById('mapSelect').value = job.map || '';
+    document.getElementById('jobName').value = job.name || '';
+    document.getElementById('includeSaves').checked = job.include_saves || false;
+    document.getElementById('includeMap').checked = job.include_map || false;
+    document.getElementById('includeServerFiles').checked = job.include_server_files || false;
+    document.getElementById('includePluginConfigs').checked = job.include_plugin_configs || false;
+    document.getElementById('intervalValue').value = job.interval_value || 1;
+    document.getElementById('intervalUnit').value = job.interval_unit || 'minutes';
+    document.getElementById('retentionDays').value = job.retention_days || 7;
+  }
+
+  setJobFormVisibilityForType(currentJobType);
   clearAllErrors();
 }
 
@@ -766,6 +1034,8 @@ function clearAllErrors() {
   clearError('destinationDirError');
   clearError('mapError');
   clearError('jobNameError');
+  const mcErr = document.getElementById('jobNameMinecraftError');
+  if (mcErr) mcErr.textContent = '';
 }
 
 // Plugin Manager Functions

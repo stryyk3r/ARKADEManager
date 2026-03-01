@@ -13,6 +13,7 @@ mod validation;
 use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::Mutex;
+use chrono::Utc;
 
 use app_data::AppData;
 use scheduler::Scheduler;
@@ -144,6 +145,66 @@ async fn run_monthly_archive(
 async fn get_status(state: tauri::State<'_, AppState>) -> Result<scheduler::Status, String> {
     let scheduler = state.scheduler.lock().await;
     Ok(scheduler.get_status())
+}
+
+/// Open the given path in the system file manager (e.g. Explorer on Windows).
+#[tauri::command]
+async fn open_backup_location(path: String) -> Result<(), String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err("Path is empty".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Open the logs directory in the system file manager.
+#[tauri::command]
+async fn open_logs_folder() -> Result<(), String> {
+    let app_data = AppData::new().map_err(|e| e.to_string())?;
+    let path = app_data.get_logs_dir().to_string_lossy().to_string();
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -593,43 +654,46 @@ impl log::Log for WinitFilter {
 }
 
 fn main() {
-    // Initialize logger with file output
+    // Initialize logger: one log file per app launch so each instance has its own log for review
     let app_data = AppData::new().unwrap_or_else(|e| {
         eprintln!("Failed to initialize app data: {}", e);
         std::process::exit(1);
     });
-    let log_file = app_data.get_logs_dir().join("arkade_manager.log");
-    
-    // Configure logger
+    let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
+    let log_file = app_data.get_logs_dir().join(format!("arkade_manager_{}.log", timestamp));
+
+    // Configure logger (timestamps in log lines for review)
     let log_config = simplelog::ConfigBuilder::new()
-        .set_time_level(log::LevelFilter::Off)
+        .set_time_level(log::LevelFilter::Info)
+        .set_time_format_rfc3339()
         .set_thread_level(log::LevelFilter::Off)
         .set_target_level(log::LevelFilter::Off)
         .set_location_level(log::LevelFilter::Off)
         .build();
-    
+
     let file = std::fs::File::create(&log_file).unwrap_or_else(|e| {
         eprintln!("Failed to create log file: {}", e);
         std::process::exit(1);
     });
-    
+
     // Create the base logger
     let base_logger = simplelog::WriteLogger::new(
         log::LevelFilter::Info,
         log_config,
         file,
     );
-    
+
     // Wrap logger with filter to suppress winit warnings
     let filtered_logger = WinitFilter {
         inner: Box::new(base_logger),
     };
-    
+
     log::set_boxed_logger(Box::new(filtered_logger))
         .map(|()| log::set_max_level(log::LevelFilter::Info))
         .unwrap_or(());
-    
+
     log::info!("ARKADE Manager starting up");
+    log::info!("Log file: {}", log_file.display());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -678,10 +742,12 @@ fn main() {
             update_job,
             delete_job,
             run_job_now,
+            open_backup_location,
             preview_monthly_archive,
             run_monthly_archive,
             get_status,
             read_logs,
+            open_logs_folder,
             list_source_plugins,
             discover_plugin_destinations,
             install_plugins,

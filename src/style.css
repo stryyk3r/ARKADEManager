@@ -1,4 +1,4 @@
-﻿* {
+* {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -534,6 +534,16 @@ button.danger:hover:not(:disabled) {
 
 .step-connector.completed {
   background: var(--success);
+}
+
+.backup-type-option:hover {
+  border-color: var(--text-secondary) !important;
+  background: var(--bg-secondary);
+}
+
+.backup-type-option:has(input:checked) {
+  border-color: var(--accent) !important;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .step-title {

@@ -1,3 +1,7 @@
+//! Scheduler: only one backup runs at a time (Minecraft or ARK).
+//! Due jobs are added to the queue. We pop and run exactly one job when no job is running.
+//! When that job completes (last_run_at updated), we clear current_job and the next tick runs the next queued job in order.
+
 use crate::app_data::AppData;
 use crate::backup;
 use crate::job::Job;
@@ -18,10 +22,19 @@ pub struct Status {
     pub last_tick: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupFailedPayload {
+    pub job_name: String,
+    pub error: String,
+}
+
+/// When a job is running we store (job_id, last_run_at when we started).
+/// We only clear when the job's last_run_at has *changed* (backup completed and updated it).
 pub struct Scheduler {
     queue: VecDeque<Job>,
     running: bool,
-    current_job: Option<String>,
+    /// (job_id, last_run_at value when this run started) — cleared only when last_run_at changes
+    current_job: Option<(String, Option<String>)>,
     last_tick: Option<SystemTime>,
     last_run_times: std::collections::HashMap<String, SystemTime>,
     app_handle: AppHandle,
@@ -71,9 +84,26 @@ impl Scheduler {
                 continue;
             }
 
+            // Never re-queue the job that is currently running (avoids multiple backup attempts)
+            if self.current_job.as_ref().map(|(id, _)| id) == Some(&job.id) {
+                log::debug!("Job {} not enqueued (already running)", job.name);
+                continue;
+            }
+
             // Check if job is due and not already in queue
             if queued_ids.contains(&job.id) {
                 continue;
+            }
+
+            // Don't re-queue if it ran very recently. Use longer cooldown after a failure to avoid repeated backup attempts when a file blocks.
+            if let Some(last_run_str) = &job.last_run_at {
+                if let Ok(last_run) = DateTime::parse_from_rfc3339(last_run_str) {
+                    let elapsed = now.signed_duration_since(last_run.with_timezone(&Utc));
+                    let cooldown_secs = if job.last_error.is_some() { 300 } else { 120 };
+                    if elapsed.num_seconds() < cooldown_secs {
+                        continue;
+                    }
+                }
             }
             
             if let Some(next_run_str) = &job.next_run_at {
@@ -98,26 +128,32 @@ impl Scheduler {
         self.last_tick = Some(SystemTime::now());
         self.running = true;
 
-        // Check if current job has completed (by checking if last_run_at was updated)
-        if let Some(job_id) = &self.current_job {
+        // Clear current_job only when the job's last_run_at has *changed* since we started (backup finished)
+        let should_clear_current = if let Some((ref job_id, ref started_last_run)) = &self.current_job {
             if let Some(job) = app_data.get_job(job_id) {
-                if job.last_run_at.is_some() {
-                    // Job completed, clear current_job
-                    self.current_job = None;
-                }
+                job.last_run_at.as_ref() != started_last_run.as_ref()
             } else {
-                // Job was deleted, clear current_job
-                self.current_job = None;
+                true
             }
+        } else {
+            false
+        };
+        if should_clear_current {
+            log::info!("Backup job finished, next in queue will run on next tick");
+            self.current_job = None;
         }
 
         // Refresh jobs to check for new due jobs
         self.refresh_jobs(app_data)?;
 
-        // Process queue (one job at a time)
+        // Process queue: only one job at a time. Do not start another until current_job is cleared (backup finished).
         if !self.queue.is_empty() && self.current_job.is_none() {
             let job = self.queue.pop_front().unwrap();
-            
+            let job_id = job.id.clone();
+            self.queue.retain(|j| j.id != job_id);
+            let queue_size = self.queue.len();
+            log::info!("Starting backup for job {} ({} in queue)", job.name, queue_size);
+
             // Dedup: skip if run within last 2 minutes
             // Check the job's actual last_run_at from the database, not the in-memory map
             // This ensures we use the completion time, not the start time
@@ -132,8 +168,8 @@ impl Scheduler {
                 }
             }
 
-            // Mark as running
-            self.current_job = Some(job.id.clone());
+            // Mark as running: store job id and last_run_at *as of now* so we only clear when it changes (backup completed)
+            self.current_job = Some((job.id.clone(), job.last_run_at.clone()));
             // Don't update last_run_times here - it will be updated when the backup completes
 
             // Run backup in background
@@ -149,8 +185,45 @@ impl Scheduler {
                     }
                 };
 
-                match backup::create_backup(&job_clone, &app_data).await {
+                let backup_result = if job_clone.job_type == "minecraft" {
+                    backup::create_minecraft_backup(&job_clone, &app_data, Some(app_handle_clone.clone())).await
+                } else {
+                    backup::create_backup(&job_clone, &app_data).await
+                };
+
+                match backup_result {
                     Ok(file_size) => {
+                        if file_size == 0 {
+                            log::error!("Backup produced 0-byte file for job {}; treating as failure", job_clone.name);
+                            let e = "Backup produced an empty file (0 bytes). The backup did not complete successfully.";
+                            let app_data = match AppData::new() {
+                                Ok(ad) => ad,
+                                Err(err) => {
+                                    log::error!("Failed to create app data for error update: {}", err);
+                                    return;
+                                }
+                            };
+                            if let Some(mut job) = app_data.get_job(&job_clone.id) {
+                                job.update_after_error(e.to_string());
+                                let mut jobs = app_data.list_jobs().unwrap_or_default();
+                                if let Some(pos) = jobs.iter().position(|j| j.id == job.id) {
+                                    jobs[pos] = job;
+                                    if let Err(err) = app_data.save_jobs(&jobs) {
+                                        log::error!("Failed to save jobs: {}", err);
+                                    }
+                                }
+                            }
+                            let payload = BackupFailedPayload {
+                                job_name: job_clone.name.clone(),
+                                error: e.to_string(),
+                            };
+                            let app_handle_for_emit = app_handle_clone.clone();
+                            app_handle_clone.run_on_main_thread(move || {
+                                app_handle_for_emit.emit("job_updated", ()).ok();
+                                app_handle_for_emit.emit("backup_failed", payload).ok();
+                            }).ok();
+                            return;
+                        }
                         // Update job
                         let app_data = match AppData::new() {
                             Ok(ad) => ad,
@@ -178,7 +251,7 @@ impl Scheduler {
                     }
                     Err(e) => {
                         log::error!("Backup failed for job {}: {}", job_clone.name, e);
-                        // Update job with error
+                        // Update job with error; update_next_run() sets next_run_at so this job will not run again until the next scheduled time
                         let app_data = match AppData::new() {
                             Ok(ad) => ad,
                             Err(err) => {
@@ -187,7 +260,7 @@ impl Scheduler {
                             }
                         };
                         if let Some(mut job) = app_data.get_job(&job_clone.id) {
-                            job.update_after_error(format!("{}", e));
+                            job.update_after_error(format!("{:#}", e));
                             let mut jobs = app_data.list_jobs().unwrap_or_default();
                             if let Some(pos) = jobs.iter().position(|j| j.id == job.id) {
                                 jobs[pos] = job;
@@ -197,10 +270,14 @@ impl Scheduler {
                             }
                         }
 
-                        // Notify on main thread to avoid winit event loop warnings
+                        let payload = BackupFailedPayload {
+                            job_name: job_clone.name.clone(),
+                            error: format!("{}", e),
+                        };
                         let app_handle_for_emit = app_handle_clone.clone();
                         app_handle_clone.run_on_main_thread(move || {
                             app_handle_for_emit.emit("job_updated", ()).ok();
+                            app_handle_for_emit.emit("backup_failed", payload).ok();
                         }).ok();
                     }
                 }
@@ -212,9 +289,17 @@ impl Scheduler {
     }
 
     pub fn enqueue_job(&mut self, job: Job) -> Result<()> {
+        if self.current_job.as_ref().map(|(id, _)| id) == Some(&job.id) {
+            log::info!("Job {} already running, not enqueueing again", job.name);
+            return Ok(());
+        }
+        if self.queue.iter().any(|j| j.id == job.id) {
+            log::info!("Job {} is already in the queue, not enqueueing again", job.name);
+            return Ok(());
+        }
+        let name = job.name.clone();
         self.queue.push_back(job);
-        // Don't emit status here - let the tick handle it to avoid event loop warnings
-        // Status will be emitted when tick() is called
+        log::info!("Job {} enqueued (queue size: {})", name, self.queue.len());
         Ok(())
     }
 
@@ -222,7 +307,7 @@ impl Scheduler {
         Status {
             running: self.running,
             queue_size: self.queue.len(),
-            current_job: self.current_job.clone(),
+            current_job: self.current_job.as_ref().map(|(id, _)| id.clone()),
             last_tick: self.last_tick.map(|t| {
                 DateTime::<Utc>::from(t)
                     .to_rfc3339()
@@ -247,7 +332,7 @@ impl Clone for Scheduler {
         Self {
             queue: self.queue.clone(),
             running: self.running,
-            current_job: self.current_job.clone(),
+            current_job: self.current_job.as_ref().map(|(id, r)| (id.clone(), r.clone())),
             last_tick: self.last_tick,
             last_run_times: self.last_run_times.clone(),
             app_handle: self.app_handle.clone(),
