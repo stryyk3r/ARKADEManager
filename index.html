@@ -12,7 +12,7 @@
         <img src="/logo-light.png" alt="ARKADE Manager Logo" class="logo-light">
         <img src="/logo-dark.png" alt="ARKADE Manager Logo" class="logo-dark">
         <h1>ARKADE Manager</h1>
-        <div class="version-box" id="versionBox">v2.2.0</div>
+        <div class="version-box" id="versionBox">v2.2.2</div>
         <div class="update-box" id="updateBox">Update Available - Click to Install</div>
       </div>
       <button class="theme-toggle" id="themeToggle">Toggle Theme</button>
@@ -156,6 +156,21 @@
             <div class="error-message" id="jobNameError"></div>
           </div>
         </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Monthly Cluster</label>
+            <select id="monthlyCluster">
+              <option value="">Select a cluster</option>
+              <option value="ASA Legacy">ASA Legacy</option>
+              <option value="ASE Legacy">ASE Legacy</option>
+              <option value="ASA Omega">ASA Omega</option>
+              <option value="Minecraft">Minecraft</option>
+              <option value="Palworld">Palworld</option>
+            </select>
+            <div class="error-message" id="monthlyClusterError"></div>
+          </div>
+        </div>
         
         <div class="checkbox-group">
           <label>Include in Backup:</label>
@@ -203,6 +218,20 @@
             <label>Job Name</label>
             <input type="text" id="jobNameMinecraft" placeholder="Enter job name">
             <div class="error-message" id="jobNameMinecraftError"></div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Monthly Cluster</label>
+            <select id="monthlyClusterMinecraft">
+              <option value="">Select a cluster</option>
+              <option value="ASA Legacy">ASA Legacy</option>
+              <option value="ASE Legacy">ASE Legacy</option>
+              <option value="ASA Omega">ASA Omega</option>
+              <option value="Minecraft">Minecraft</option>
+              <option value="Palworld">Palworld</option>
+            </select>
+            <div class="error-message" id="monthlyClusterMinecraftError"></div>
           </div>
         </div>
         <div class="form-row">
@@ -430,6 +459,18 @@
             <div class="error-message" id="wizardMinecraftJobNameError"></div>
           </div>
           <div class="form-group">
+            <label>Monthly Cluster</label>
+            <select id="wizardMonthlyClusterMinecraft">
+              <option value="">Select a cluster</option>
+              <option value="ASA Legacy">ASA Legacy</option>
+              <option value="ASE Legacy">ASE Legacy</option>
+              <option value="ASA Omega">ASA Omega</option>
+              <option value="Minecraft">Minecraft</option>
+              <option value="Palworld">Palworld</option>
+            </select>
+            <div class="error-message" id="wizardMonthlyClusterMinecraftError"></div>
+          </div>
+          <div class="form-group">
             <label>RCON Host (IP or hostname)</label>
             <input type="text" id="wizardMinecraftRconHost" placeholder="e.g. 127.0.0.1 or localhost">
             <div class="error-message" id="wizardMinecraftRconHostError"></div>
@@ -498,6 +539,19 @@
             <label>Job Name</label>
             <input type="text" id="wizardJobName" placeholder="Enter job name">
             <div class="error-message" id="wizardJobNameError"></div>
+          </div>
+
+          <div class="form-group">
+            <label>Monthly Cluster</label>
+            <select id="wizardMonthlyClusterArk">
+              <option value="">Select a cluster</option>
+              <option value="ASA Legacy">ASA Legacy</option>
+              <option value="ASE Legacy">ASE Legacy</option>
+              <option value="ASA Omega">ASA Omega</option>
+              <option value="Minecraft">Minecraft</option>
+              <option value="Palworld">Palworld</option>
+            </select>
+            <div class="error-message" id="wizardMonthlyClusterArkError"></div>
           </div>
           
           <div class="checkbox-group">

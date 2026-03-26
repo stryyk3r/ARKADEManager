@@ -4,6 +4,24 @@ All notable changes to ARKADE Manager are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.2.2] - 2026-03-26
+
+### Added
+
+- **Monthly cluster (per job)** — each backup job explicitly selects which FOTM subfolder (`ASA Legacy`, `ASE Legacy`, `ASA Omega`, `Minecraft`, `Palworld`) receives the first two monthly copies.
+- **`get_monthly_status`** — Monthly Status reports per-job completion for the current month (copies in the month folder), not a file preview list.
+
+### Changed
+
+- **Monthly backup copy** — ownership uses strict `{job_name}_YYYYMMDD_HHMMSS` parsing and longest job-name match when several jobs could match the same filename; no longer uses file modified time (avoids wrong job / missed new jobs).
+- **Run Monthly Backup** — copies use the owning job’s cluster folder correctly.
+
+### Fixed
+
+- **Run Now** could only run once per job in a row; removed the queue pop dedup that dropped the second manual run.
+
+---
+
 ## [2.2.0] - 2025-02-25
 
 ### Added
@@ -53,4 +71,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Application migrated to Tauri v2 (Rust backend + web frontend).
 - ARK ASA backup jobs, scheduling, monthly archive, logs.
 
+[2.2.2]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.2.2
 [2.2.0]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.2.0

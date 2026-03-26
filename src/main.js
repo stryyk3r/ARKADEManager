@@ -256,8 +256,12 @@ function clearWizardErrors() {
   document.getElementById('wizardDestinationDirError').textContent = '';
   document.getElementById('wizardMapError').textContent = '';
   document.getElementById('wizardJobNameError').textContent = '';
+  const arkClusterErr = document.getElementById('wizardMonthlyClusterArkError');
+  if (arkClusterErr) arkClusterErr.textContent = '';
   const mcErr = document.getElementById('wizardMinecraftJobNameError');
   if (mcErr) mcErr.textContent = '';
+  const mcClusterErr = document.getElementById('wizardMonthlyClusterMinecraftError');
+  if (mcClusterErr) mcClusterErr.textContent = '';
   const rconHostErr = document.getElementById('wizardMinecraftRconHostError');
   if (rconHostErr) rconHostErr.textContent = '';
   const rconPortErr = document.getElementById('wizardMinecraftRconPortError');
@@ -364,6 +368,11 @@ function validateCurrentStep() {
           document.getElementById('wizardMinecraftJobNameError').textContent = 'Job name is required';
           isValid = false;
         }
+        const mcCluster = document.getElementById('wizardMonthlyClusterMinecraft')?.value;
+        if (!mcCluster) {
+          document.getElementById('wizardMonthlyClusterMinecraftError').textContent = 'Monthly cluster is required';
+          isValid = false;
+        }
         const rconHost = document.getElementById('wizardMinecraftRconHost').value.trim();
         if (!rconHost) {
           document.getElementById('wizardMinecraftRconHostError').textContent = 'RCON host is required';
@@ -392,6 +401,11 @@ function validateCurrentStep() {
       const jobName = document.getElementById('wizardJobName').value.trim();
       if (!jobName) {
         document.getElementById('wizardJobNameError').textContent = 'Job name is required';
+        isValid = false;
+      }
+      const arkCluster = document.getElementById('wizardMonthlyClusterArk')?.value;
+      if (!arkCluster) {
+        document.getElementById('wizardMonthlyClusterArkError').textContent = 'Monthly cluster is required';
         isValid = false;
       }
       break;
@@ -444,6 +458,7 @@ window.wizardFinish = async () => {
   if (backupType === 'minecraft') {
     job = {
       job_type: 'minecraft',
+      monthly_cluster: document.getElementById('wizardMonthlyClusterMinecraft').value,
       name: document.getElementById('wizardMinecraftJobName').value.trim(),
       root_dir: document.getElementById('wizardRootDir').value.trim(),
       destination_dir: document.getElementById('wizardDestinationDir').value.trim(),
@@ -463,6 +478,7 @@ window.wizardFinish = async () => {
   } else {
     job = {
       job_type: 'ark',
+      monthly_cluster: document.getElementById('wizardMonthlyClusterArk').value,
       name: document.getElementById('wizardJobName').value.trim(),
       root_dir: document.getElementById('wizardRootDir').value.trim(),
       destination_dir: document.getElementById('wizardDestinationDir').value.trim(),
@@ -693,19 +709,32 @@ window.refreshJobs = async () => {
 
 window.showMonthlyStatus = async () => {
   try {
-    const preview = await invoke('preview_monthly_archive');
-    if (preview.files && preview.files.length > 0) {
-      alert(`Monthly Archive Preview:\n\n${preview.files.length} files would be archived:\n${preview.files.slice(0, 5).join('\n')}${preview.files.length > 5 ? '\n...' : ''}`);
+    const status = await invoke('get_monthly_status');
+    const jobs = status.jobs || [];
+    const completed = jobs.filter(j => j.completed).length;
+    const total = jobs.length;
+    const lines = [];
+    lines.push(`Monthly Status (current month)`);
+    lines.push(`Month folder: ${status.month_folder}`);
+    lines.push(`Completed: ${completed}/${total} job(s) have 2 monthly copies`);
+    lines.push('');
+    if (jobs.length === 0) {
+      lines.push('No jobs found.');
     } else {
-      alert('No files to archive this month');
+      for (const j of jobs) {
+        const cluster = j.monthly_cluster || '(unset)';
+        const count = (j.copied_this_month ?? 0);
+        lines.push(`${j.completed ? 'COMPLETED' : 'PENDING'}  ${j.job_name}  [${cluster}]  ${count}/2`);
+      }
     }
+    alert(lines.join('\n'));
   } catch (e) {
     alert('Failed to get monthly status: ' + e);
   }
 };
 
 window.runMonthlyBackup = async () => {
-  if (!confirm('Run monthly archive now? This will archive the oldest 2 backups from the current month.')) {
+  if (!confirm('Run monthly backup copy now? This will copy the first 2 backups per job for the current month into the monthly folder.')) {
     return;
   }
   
@@ -734,6 +763,9 @@ function collectJobData() {
   const rootDir = document.getElementById('rootDir').value.trim();
   const destinationDir = document.getElementById('destinationDir').value.trim();
   const isMinecraft = currentJobType === 'minecraft';
+  const cluster = isMinecraft
+    ? (document.getElementById('monthlyClusterMinecraft')?.value || '')
+    : (document.getElementById('monthlyCluster')?.value || '');
 
   if (!rootDir) {
     showError('rootDirError', 'Server root directory is required');
@@ -741,6 +773,10 @@ function collectJobData() {
   }
   if (!destinationDir) {
     showError('destinationDirError', 'Destination directory is required');
+    return null;
+  }
+  if (!cluster) {
+    showError(isMinecraft ? 'monthlyClusterMinecraftError' : 'monthlyClusterError', 'Monthly cluster is required');
     return null;
   }
 
@@ -800,6 +836,7 @@ function collectJobData() {
 
   const payload = {
     job_type: currentJobType,
+    monthly_cluster: cluster,
     name,
     root_dir: rootDir,
     destination_dir: destinationDir,
@@ -968,6 +1005,8 @@ function loadJobIntoForm(job) {
 
   if (isMinecraft) {
     document.getElementById('jobNameMinecraft').value = job.name || '';
+    const mcCluster = document.getElementById('monthlyClusterMinecraft');
+    if (mcCluster) mcCluster.value = job.monthly_cluster || 'Minecraft';
     document.getElementById('intervalValueMinecraft').value = job.interval_value || 1;
     document.getElementById('intervalUnitMinecraft').value = job.interval_unit || 'minutes';
     document.getElementById('rconHostMinecraft').value = job.rcon_host || '';
@@ -976,6 +1015,8 @@ function loadJobIntoForm(job) {
   } else {
     document.getElementById('mapSelect').value = job.map || '';
     document.getElementById('jobName').value = job.name || '';
+    const arkCluster = document.getElementById('monthlyCluster');
+    if (arkCluster) arkCluster.value = job.monthly_cluster || 'ASA Legacy';
     document.getElementById('includeSaves').checked = job.include_saves || false;
     document.getElementById('includeMap').checked = job.include_map || false;
     document.getElementById('includeServerFiles').checked = job.include_server_files || false;
@@ -1034,8 +1075,12 @@ function clearAllErrors() {
   clearError('destinationDirError');
   clearError('mapError');
   clearError('jobNameError');
+  const clErr = document.getElementById('monthlyClusterError');
+  if (clErr) clErr.textContent = '';
   const mcErr = document.getElementById('jobNameMinecraftError');
   if (mcErr) mcErr.textContent = '';
+  const mcClErr = document.getElementById('monthlyClusterMinecraftError');
+  if (mcClErr) mcClErr.textContent = '';
 }
 
 // Plugin Manager Functions

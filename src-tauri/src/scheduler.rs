@@ -154,19 +154,9 @@ impl Scheduler {
             let queue_size = self.queue.len();
             log::info!("Starting backup for job {} ({} in queue)", job.name, queue_size);
 
-            // Dedup: skip if run within last 2 minutes
-            // Check the job's actual last_run_at from the database, not the in-memory map
-            // This ensures we use the completion time, not the start time
-            if let Some(last_run_str) = &job.last_run_at {
-                if let Ok(last_run_dt) = DateTime::parse_from_rfc3339(last_run_str) {
-                    let elapsed = Utc::now().signed_duration_since(last_run_dt.with_timezone(&Utc));
-                    if elapsed.num_seconds() < 120 {
-                        log::info!("Skipping job {} (dedup - last run {} seconds ago)", job.name, elapsed.num_seconds());
-                        self.emit_status();
-                        return Ok(());
-                    }
-                }
-            }
+            // Do not skip here based on last_run_at. A previous 2-minute dedup at pop time broke
+            // "Run Now" twice in a row (job was popped then dropped). Scheduled re-runs are already
+            // throttled in refresh_jobs() via the 120s / 300s cooldown before a due job is enqueued.
 
             // Mark as running: store job id and last_run_at *as of now* so we only clear when it changes (backup completed)
             self.current_job = Some((job.id.clone(), job.last_run_at.clone()));

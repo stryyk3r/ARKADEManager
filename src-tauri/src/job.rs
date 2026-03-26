@@ -7,11 +7,17 @@ fn default_job_type() -> String {
     "ark".to_string()
 }
 
+fn default_monthly_cluster() -> String {
+    "ASA Legacy".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Job {
     pub id: String,
     #[serde(default = "default_job_type")]
     pub job_type: String, // "ark" | "minecraft"
+    #[serde(default = "default_monthly_cluster")]
+    pub monthly_cluster: String, // "ASA Legacy" | "ASE Legacy" | "ASA Omega" | "Minecraft" | "Palworld"
     pub name: String,
     pub root_dir: String,
     pub destination_dir: String,
@@ -41,6 +47,8 @@ pub struct JobInput {
     pub id: Option<String>,
     #[serde(default = "default_job_type")]
     pub job_type: String, // "ark" | "minecraft"
+    #[serde(default = "default_monthly_cluster")]
+    pub monthly_cluster: String,
     pub name: String,
     pub root_dir: String,
     pub destination_dir: String,
@@ -71,6 +79,7 @@ impl Job {
         Self {
             id,
             job_type: input.job_type.clone(),
+            monthly_cluster: input.monthly_cluster,
             name: input.name,
             root_dir: input.root_dir,
             destination_dir: input.destination_dir,
@@ -161,6 +170,7 @@ mod tests {
         let input = JobInput {
             id: None,
             job_type: "ark".to_string(),
+            monthly_cluster: "ASA Legacy".to_string(),
             name: "Test Job".to_string(),
             root_dir: r"C:\test".to_string(),
             destination_dir: r"C:\backups".to_string(),
@@ -189,6 +199,7 @@ mod tests {
         let mut input = JobInput {
             id: None,
             job_type: "ark".to_string(),
+            monthly_cluster: "ASA Legacy".to_string(),
             name: "Test".to_string(),
             root_dir: r"C:\test".to_string(),
             destination_dir: r"C:\backups".to_string(),

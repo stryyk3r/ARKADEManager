@@ -142,6 +142,14 @@ async fn run_monthly_archive(
 }
 
 #[tauri::command]
+async fn get_monthly_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<backup::MonthlyStatusResult, String> {
+    let app_data = state.app_data.lock().await;
+    backup::get_monthly_status(&app_data).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn get_status(state: tauri::State<'_, AppState>) -> Result<scheduler::Status, String> {
     let scheduler = state.scheduler.lock().await;
     Ok(scheduler.get_status())
@@ -745,6 +753,7 @@ fn main() {
             open_backup_location,
             preview_monthly_archive,
             run_monthly_archive,
+            get_monthly_status,
             get_status,
             read_logs,
             open_logs_folder,

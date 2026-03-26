@@ -14,6 +14,20 @@ pub fn validate_job(job: &JobInput) -> Result<()> {
         anyhow::bail!("Destination directory does not exist: {}", job.destination_dir);
     }
 
+    let cluster = job.monthly_cluster.trim();
+    if cluster.is_empty() {
+        anyhow::bail!("Monthly cluster is required");
+    }
+    if !matches!(
+        cluster,
+        "ASA Legacy" | "ASE Legacy" | "ASA Omega" | "Minecraft" | "Palworld"
+    ) {
+        anyhow::bail!(
+            "Invalid monthly cluster: {} (expected ASA Legacy, ASE Legacy, ASA Omega, Minecraft, or Palworld)",
+            cluster
+        );
+    }
+
     if job.job_type == "minecraft" {
         validate_interval_retention(job)?;
         // Minecraft with RCON: require host, port, password for save-off/save-on flow
