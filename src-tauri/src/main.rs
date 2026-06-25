@@ -186,6 +186,40 @@ async fn open_backup_location(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Open a URL in the system default browser.
+#[tauri::command]
+async fn open_external_url(url: String) -> Result<(), String> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err("URL is empty".to_string());
+    }
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("Invalid URL".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Open the logs directory in the system file manager.
 #[tauri::command]
 async fn open_logs_folder() -> Result<(), String> {
@@ -291,12 +325,15 @@ async fn check_for_updates() -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "available": true,
             "version": latest_version,
+            "published_at": release.get("published_at").and_then(|b| b.as_str()).unwrap_or(""),
             "body": release.get("body").and_then(|b| b.as_str()).unwrap_or("")
         }))
     } else {
         log::info!("No update available (current: {}, latest: {})", current_version, latest_version);
         Ok(serde_json::json!({
-            "available": false
+            "available": false,
+            "version": latest_version,
+            "published_at": release.get("published_at").and_then(|b| b.as_str()).unwrap_or("")
         }))
     }
 }
@@ -757,6 +794,7 @@ fn main() {
             get_status,
             read_logs,
             open_logs_folder,
+            open_external_url,
             list_source_plugins,
             discover_plugin_destinations,
             install_plugins,

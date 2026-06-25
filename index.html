@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,53 +7,167 @@
 </head>
 <body>
   <div class="app-container">
-    <div class="header">
-      <div class="header-left">
-        <img src="/logo-light.png" alt="ARKADE Manager Logo" class="logo-light">
-        <img src="/logo-dark.png" alt="ARKADE Manager Logo" class="logo-dark">
-        <h1>ARKADE Manager</h1>
-        <div class="version-box" id="versionBox">v2.2.2</div>
-        <div class="update-box" id="updateBox">Update Available - Click to Install</div>
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">
+          <img src="/Icon_ArkadeLogo.png" alt="" class="brand-logo-img" width="36" height="36">
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">ARKADE MANAGER</span>
+          <span class="brand-version tabular" id="sidebarVersion">v2.2.2</span>
+        </div>
       </div>
-      <button class="theme-toggle" id="themeToggle">Toggle Theme</button>
-    </div>
-    
-    <div class="tabs">
-      <button class="tab active" data-tab="backups">Backups</button>
-      <button class="tab" data-tab="logs">Logs</button>
-      <button class="tab" data-tab="new-plugins">New Plugins</button>
-      <button class="tab" data-tab="plugin-toggle">Plugin Toggle</button>
-    </div>
-    
+
+      <nav class="sidebar-nav" aria-label="Main navigation">
+        <div class="nav-section-label">Workspace</div>
+        <button class="nav-item active" data-tab="backups" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          Backups
+        </button>
+        <button class="nav-item" data-tab="logs" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+          Logs
+        </button>
+        <button class="nav-item" data-tab="new-plugins" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          Plugins
+        </button>
+        <button class="nav-item" data-tab="plugin-toggle" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Toggle
+        </button>
+
+        <div class="nav-section-label">System</div>
+        <button class="nav-item" data-tab="settings" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          Settings
+        </button>
+      </nav>
+
+      <div class="sidebar-scheduler">
+        <div class="scheduler-card">
+          <div class="scheduler-card-header">
+            <span class="scheduler-card-title">Scheduler</span>
+            <span class="scheduler-status" id="sidebarSchedulerStatus">
+              <span class="status-dot" id="sidebarStatusDot"></span>
+              <span id="sidebarSchedulerLabel">Idle</span>
+            </span>
+          </div>
+          <div class="scheduler-row"><span class="scheduler-key">Current job</span><span class="scheduler-val" id="sidebarCurrentJob">None</span></div>
+          <div class="scheduler-row"><span class="scheduler-key">Queue size</span><span class="scheduler-val tabular" id="sidebarQueueSize">0</span></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-content">
     <div class="tab-content">
       <!-- Backups Tab -->
       <div class="tab-pane active" id="backups">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-          <h2 style="margin: 0;">Backups</h2>
-          <div class="button-group" style="margin: 0;">
-            <button onclick="showAddJobForm()">Add Job</button>
-            <button onclick="refreshJobs()" class="secondary">Refresh</button>
-            <button onclick="showMonthlyStatus()" class="secondary">Monthly Status</button>
-            <button onclick="runMonthlyBackup()" class="secondary">Run Monthly Backup</button>
+        <div class="page-header">
+          <div class="page-header-left">
+            <div class="page-title-row">
+              <h2 class="page-title">Backup Jobs</h2>
+              <span class="configured-badge" id="configuredJobsBadge">0 configured</span>
+            </div>
+            <p class="page-description">Scheduled saves across your game servers.</p>
+          </div>
+          <div class="page-header-actions">
+            <button onclick="refreshJobs()" class="secondary btn-outline btn-sm" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+              Refresh
+            </button>
+            <button onclick="runMonthlyBackup()" class="secondary btn-outline btn-sm btn-teal-outline" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Run Monthly
+            </button>
+            <button onclick="showAddJobForm()" class="btn-accent" type="button">+ Add Job</button>
           </div>
         </div>
 
-        <div id="backupEmptyAll" class="empty-state" style="display: none; padding: 20px; color: var(--text-secondary); margin-bottom: 20px;">No backup jobs configured. Click Add Job to get started.</div>
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+          <div class="summary-card summary-teal">
+            <div class="summary-icon">◎</div>
+            <div class="summary-body">
+              <span class="summary-label">Active</span>
+              <span class="summary-value" id="statActiveValue">0</span>
+              <span class="summary-meta" id="statActiveMeta">0 saving</span>
+            </div>
+          </div>
+          <div class="summary-card summary-muted">
+            <div class="summary-icon">☰</div>
+            <div class="summary-body">
+              <span class="summary-label">Queue</span>
+              <span class="summary-value" id="statQueueValue">0</span>
+              <span class="summary-meta" id="statQueueMeta">0 waiting</span>
+            </div>
+          </div>
+          <div class="summary-card summary-green">
+            <div class="summary-icon">✓</div>
+            <div class="summary-body">
+              <span class="summary-label">Success 24h</span>
+              <span class="summary-value" id="statSuccessValue">—</span>
+              <span class="summary-meta" id="statSuccessMeta">recent runs</span>
+            </div>
+          </div>
+          <div class="summary-card summary-yellow">
+            <div class="summary-icon">▣</div>
+            <div class="summary-body">
+              <span class="summary-label">Storage</span>
+              <span class="summary-value" id="statStorageValue">0 B</span>
+              <span class="summary-meta" id="statStorageMeta">last backup sizes</span>
+            </div>
+          </div>
+        </div>
 
-        <div id="backupProgressCard" style="display: none; margin-bottom: 20px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px;">
-          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-            <span class="running-indicator" style="animation: pulse 1.5s ease-in-out infinite;"></span>
+        <!-- Hidden compat -->
+        <span class="running-indicator stopped" id="runningIndicator" style="display:none"></span>
+        <span id="schedulerStatus" style="display:none">Stopped</span>
+        <span id="queueSize" style="display:none">0</span>
+        <span id="currentJob" style="display:none">None</span>
+        <span id="lastTick" style="display:none">Never</span>
+        <span id="versionBox" style="display:none">v2.2.2</span>
+        <span id="versionStatusBadge" style="display:none"></span>
+        <span id="versionDate" style="display:none"></span>
+        <button id="updateBox" type="button" style="display:none"></button>
+
+        <div id="backupProgressCard" class="progress-card">
+          <div class="progress-card-header">
+            <span class="running-indicator"></span>
             <strong id="backupProgressJobName">Backup</strong>
-            <span id="backupProgressPct" style="margin-left: auto; color: var(--text-muted);">0%</span>
+            <span class="progress-pct" id="backupProgressPct">0%</span>
           </div>
-          <div style="height: 10px; background: var(--bg-tertiary); border-radius: 5px; overflow: hidden;">
-            <div id="backupProgressBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #16a34a 0%, #22c55e 100%); border-radius: 5px; transition: width 0.35s ease;"></div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="backupProgressBar"></div>
           </div>
         </div>
 
-        <div id="backupSectionArk" style="margin-bottom: 28px;">
-          <h3 style="margin: 0 0 12px 0; font-size: 16px;">ARK: Survival Ascended</h3>
-          <table class="jobs-table" id="jobsTableArk">
+        <div id="backupEmptyAll" class="empty-state-card" style="display: none;">
+          <p>No backup jobs configured yet.</p>
+          <button onclick="showAddJobForm()" class="btn-accent" type="button">+ Add Your First Job</button>
+        </div>
+
+        <div class="toolbar" id="backupToolbar">
+          <div class="search-box">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="text" id="jobSearchInput" placeholder="Search jobs, maps, clusters…">
+          </div>
+          <select class="toolbar-select" id="jobStatusFilter">
+            <option value="all">All Statuses</option>
+            <option value="enabled">Enabled</option>
+            <option value="disabled">Disabled</option>
+            <option value="error">Has Error</option>
+          </select>
+          <select class="toolbar-select" id="jobTypeFilter">
+            <option value="all">All Types</option>
+            <option value="ark">ARK</option>
+            <option value="minecraft">Minecraft</option>
+          </select>
+          <button onclick="showMonthlyStatus()" class="secondary btn-sm" type="button">Monthly Status</button>
+        </div>
+
+        <div class="jobs-panel" id="jobsPanel">
+          <table class="jobs-table jobs-table-unified">
             <thead>
               <tr>
                 <th>Job Name</th>
@@ -61,248 +175,212 @@
                 <th>Next Save</th>
                 <th>Last Save</th>
                 <th>File Size</th>
-                <th style="width: 50px;"></th>
+                <th></th>
               </tr>
             </thead>
-            <tbody id="jobsTableBodyArk"></tbody>
+            <tbody id="jobsTableBody"></tbody>
           </table>
-          <div class="empty-state" id="arkJobsEmpty" style="display: none; padding: 16px; color: var(--text-secondary);">No ARK backup jobs. Add a job and choose ARK in step 1.</div>
         </div>
 
-        <div id="backupSectionMinecraft" style="margin-bottom: 28px;">
-          <h3 style="margin: 0 0 12px 0; font-size: 16px;">Minecraft</h3>
-          <table class="jobs-table" id="jobsTableMinecraft">
-            <thead>
-              <tr>
-                <th>Job Name</th>
-                <th>Interval</th>
-                <th>Next Save</th>
-                <th>Last Save</th>
-                <th>File Size</th>
-                <th style="width: 50px;"></th>
-              </tr>
-            </thead>
-            <tbody id="jobsTableBodyMinecraft"></tbody>
-          </table>
-          <div class="empty-state" id="minecraftJobsEmpty" style="display: none; padding: 16px; color: var(--text-secondary);">No Minecraft backup jobs. Add a job and choose Minecraft in step 1.</div>
-        </div>
-        
-        <div class="status-area" style="margin-top: 20px;">
-          <h3>Status</h3>
-          <div class="status-item">
-            <span class="running-indicator stopped" id="runningIndicator"></span>
-            <strong>Scheduler:</strong> <span id="schedulerStatus">Stopped</span>
-          </div>
-          <div class="status-item">
-            <strong>Queue Size:</strong> <span id="queueSize">0</span>
-          </div>
-          <div class="status-item">
-            <strong>Current Job:</strong> <span id="currentJob">None</span>
-          </div>
-          <div class="status-item">
-            <strong>Last Tick:</strong> <span id="lastTick">Never</span>
-          </div>
-        </div>
-        
-        <!-- Job Form (Hidden by default) -->
-        <div id="jobFormContainer" style="display: none; visibility: hidden; height: 0; overflow: hidden; margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border-color);">
+        <!-- Job Form (Hidden) -->
+        <div id="jobFormContainer" style="display: none; visibility: hidden; height: 0; overflow: hidden; margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border-subtle);">
           <h3 id="jobFormTitle">Add New Job</h3>
-          
           <div class="form-row">
-          <div class="form-group">
-            <label>Server Root Directory</label>
-            <div style="display: flex; gap: 8px;">
-              <input type="text" id="rootDir" readonly>
-              <button class="secondary" onclick="pickRootDir()">Browse</button>
+            <div class="form-group">
+              <label>Server Root Directory</label>
+              <div class="input-with-btn">
+                <input type="text" id="rootDir" readonly>
+                <button class="secondary" onclick="pickRootDir()">Browse</button>
+              </div>
+              <div class="error-message" id="rootDirError"></div>
             </div>
-            <div class="error-message" id="rootDirError"></div>
-          </div>
-          
-          <div class="form-group">
-            <label>Destination Directory</label>
-            <div style="display: flex; gap: 8px;">
-              <input type="text" id="destinationDir" readonly>
-              <button class="secondary" onclick="pickDestinationDir()">Browse</button>
-            </div>
-            <div class="error-message" id="destinationDirError"></div>
-          </div>
-        </div>
-        
-        <div id="jobFormArkFields" class="job-form-ark-fields">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Map</label>
-            <select id="mapSelect">
-              <option value="">Select a map</option>
-              <option value="TheIsland">The Island</option>
-              <option value="TheCenter">The Center</option>
-              <option value="ScorchedEarth">Scorched Earth</option>
-              <option value="Ragnarok">Ragnarok</option>
-              <option value="Aberration">Aberration</option>
-              <option value="Extinction">Extinction</option>
-              <option value="Valguero">Valguero</option>
-              <option value="Svartalfheim">Svartalfheim</option>
-              <option value="Astraeos">Astraeos</option>
-              <option value="Forglar">Forglar</option>
-              <option value="Amissa">Amissa</option>
-              <option value="LostColony">Lost Colony</option>
-            </select>
-            <div class="error-message" id="mapError"></div>
-          </div>
-          
-          <div class="form-group">
-            <label>Job Name</label>
-            <input type="text" id="jobName" placeholder="Enter job name">
-            <div class="error-message" id="jobNameError"></div>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label>Monthly Cluster</label>
-            <select id="monthlyCluster">
-              <option value="">Select a cluster</option>
-              <option value="ASA Legacy">ASA Legacy</option>
-              <option value="ASE Legacy">ASE Legacy</option>
-              <option value="ASA Omega">ASA Omega</option>
-              <option value="Minecraft">Minecraft</option>
-              <option value="Palworld">Palworld</option>
-            </select>
-            <div class="error-message" id="monthlyClusterError"></div>
-          </div>
-        </div>
-        
-        <div class="checkbox-group">
-          <label>Include in Backup:</label>
-          <div class="checkbox-item">
-            <input type="checkbox" id="includeSaves">
-            <label for="includeSaves" style="margin: 0;">Player/Tribe saves</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="includeMap">
-            <label for="includeMap" style="margin: 0;">Map save</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="includeServerFiles">
-            <label for="includeServerFiles" style="margin: 0;">Server INI files (Game.ini, GameUserSettings.ini)</label>
-          </div>
-          <div class="checkbox-item">
-            <input type="checkbox" id="includePluginConfigs">
-            <label for="includePluginConfigs" style="margin: 0;">Plugin config files (config.json)</label>
-          </div>
-        </div>
-        
-        <div class="form-row">
-          <div class="form-group">
-            <label>Interval</label>
-            <div class="interval-input">
-              <input type="number" id="intervalValue" min="1" value="1">
-              <select id="intervalUnit">
-                <option value="minutes">Minutes</option>
-                <option value="hours">Hours</option>
-                <option value="days">Days</option>
-              </select>
+            <div class="form-group">
+              <label>Destination Directory</label>
+              <div class="input-with-btn">
+                <input type="text" id="destinationDir" readonly>
+                <button class="secondary" onclick="pickDestinationDir()">Browse</button>
+              </div>
+              <div class="error-message" id="destinationDirError"></div>
             </div>
           </div>
-          
-          <div class="form-group" id="jobFormRetentionGroup">
-            <label>Retention (days)</label>
-            <input type="number" id="retentionDays" min="1" value="7">
-          </div>
-        </div>
-        </div>
-        
-        <div id="jobFormMinecraftFields" class="job-form-minecraft-fields" style="display: none;">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Job Name</label>
-            <input type="text" id="jobNameMinecraft" placeholder="Enter job name">
-            <div class="error-message" id="jobNameMinecraftError"></div>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Monthly Cluster</label>
-            <select id="monthlyClusterMinecraft">
-              <option value="">Select a cluster</option>
-              <option value="ASA Legacy">ASA Legacy</option>
-              <option value="ASE Legacy">ASE Legacy</option>
-              <option value="ASA Omega">ASA Omega</option>
-              <option value="Minecraft">Minecraft</option>
-              <option value="Palworld">Palworld</option>
-            </select>
-            <div class="error-message" id="monthlyClusterMinecraftError"></div>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>RCON Host (IP or hostname)</label>
-            <input type="text" id="rconHostMinecraft" placeholder="e.g. 127.0.0.1">
-          </div>
-          <div class="form-group">
-            <label>RCON Port</label>
-            <input type="number" id="rconPortMinecraft" placeholder="25575" min="1" max="65535">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>RCON Password</label>
-            <input type="password" id="rconPasswordMinecraft" placeholder="RCON password">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Interval</label>
-            <div class="interval-input">
-              <input type="number" id="intervalValueMinecraft" min="1" value="1">
-              <select id="intervalUnitMinecraft">
-                <option value="minutes">Minutes</option>
-                <option value="hours">Hours</option>
-                <option value="days">Days</option>
-              </select>
+          <div id="jobFormArkFields" class="job-form-ark-fields">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Map</label>
+                <select id="mapSelect">
+                  <option value="">Select a map</option>
+                  <option value="TheIsland">The Island</option>
+                  <option value="TheCenter">The Center</option>
+                  <option value="ScorchedEarth">Scorched Earth</option>
+                  <option value="Ragnarok">Ragnarok</option>
+                  <option value="Aberration">Aberration</option>
+                  <option value="Extinction">Extinction</option>
+                  <option value="Valguero">Valguero</option>
+                  <option value="Svartalfheim">Svartalfheim</option>
+                  <option value="Astraeos">Astraeos</option>
+                  <option value="Forglar">Forglar</option>
+                  <option value="Amissa">Amissa</option>
+                  <option value="LostColony">Lost Colony</option>
+                </select>
+                <div class="error-message" id="mapError"></div>
+              </div>
+              <div class="form-group">
+                <label>Job Name</label>
+                <input type="text" id="jobName" placeholder="Enter job name">
+                <div class="error-message" id="jobNameError"></div>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Monthly Cluster</label>
+                <select id="monthlyCluster">
+                  <option value="">Select a cluster</option>
+                  <option value="ASA Legacy">ASA Legacy</option>
+                  <option value="ASE Legacy">ASE Legacy</option>
+                  <option value="ASA Omega">ASA Omega</option>
+                  <option value="Minecraft">Minecraft</option>
+                  <option value="Palworld">Palworld</option>
+                </select>
+                <div class="error-message" id="monthlyClusterError"></div>
+              </div>
+            </div>
+            <div class="checkbox-group">
+              <label>Include in Backup:</label>
+              <div class="checkbox-item">
+                <input type="checkbox" id="includeSaves">
+                <label for="includeSaves" style="margin: 0;">Player/Tribe saves</label>
+              </div>
+              <div class="checkbox-item">
+                <input type="checkbox" id="includeMap">
+                <label for="includeMap" style="margin: 0;">Map save</label>
+              </div>
+              <div class="checkbox-item">
+                <input type="checkbox" id="includeServerFiles">
+                <label for="includeServerFiles" style="margin: 0;">Server INI files</label>
+              </div>
+              <div class="checkbox-item">
+                <input type="checkbox" id="includePluginConfigs">
+                <label for="includePluginConfigs" style="margin: 0;">Plugin config files</label>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Interval</label>
+                <div class="interval-input">
+                  <input type="number" id="intervalValue" min="1" value="1">
+                  <select id="intervalUnit">
+                    <option value="minutes">Minutes</option>
+                    <option value="hours">Hours</option>
+                    <option value="days">Days</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group" id="jobFormRetentionGroup">
+                <label>Retention (days)</label>
+                <input type="number" id="retentionDays" min="1" value="7">
+              </div>
             </div>
           </div>
-        </div>
-        <p class="step-description" style="margin: 0 0 12px 0; font-size: 0.9em; color: var(--text-muted);">Retention: last 48 hours of backups plus the first backup of each day for 30 days.</p>
-        </div>
-        
-        <div class="form-group">
-          <div class="checkbox-item">
-            <input type="checkbox" id="enabled">
-            <label for="enabled" style="margin: 0;">Enabled</label>
+          <div id="jobFormMinecraftFields" class="job-form-minecraft-fields" style="display: none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Job Name</label>
+                <input type="text" id="jobNameMinecraft" placeholder="Enter job name">
+                <div class="error-message" id="jobNameMinecraftError"></div>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Monthly Cluster</label>
+                <select id="monthlyClusterMinecraft">
+                  <option value="">Select a cluster</option>
+                  <option value="ASA Legacy">ASA Legacy</option>
+                  <option value="ASE Legacy">ASE Legacy</option>
+                  <option value="ASA Omega">ASA Omega</option>
+                  <option value="Minecraft">Minecraft</option>
+                  <option value="Palworld">Palworld</option>
+                </select>
+                <div class="error-message" id="monthlyClusterMinecraftError"></div>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>RCON Host</label>
+                <input type="text" id="rconHostMinecraft" placeholder="e.g. 127.0.0.1">
+              </div>
+              <div class="form-group">
+                <label>RCON Port</label>
+                <input type="number" id="rconPortMinecraft" placeholder="25575" min="1" max="65535">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>RCON Password</label>
+                <input type="password" id="rconPasswordMinecraft" placeholder="RCON password">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Interval</label>
+                <div class="interval-input">
+                  <input type="number" id="intervalValueMinecraft" min="1" value="1">
+                  <select id="intervalUnitMinecraft">
+                    <option value="minutes">Minutes</option>
+                    <option value="hours">Hours</option>
+                    <option value="days">Days</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <p class="step-description">Retention: last 48 hours of backups plus the first backup of each day for 30 days.</p>
           </div>
-        </div>
-        
+          <div class="form-group">
+            <div class="checkbox-item">
+              <input type="checkbox" id="enabled">
+              <label for="enabled" style="margin: 0;">Enabled</label>
+            </div>
+          </div>
           <div class="button-group">
             <button onclick="addJob()" id="submitJobBtn">Add Job</button>
             <button onclick="cancelJobForm()" class="secondary">Cancel</button>
           </div>
         </div>
       </div>
-      
+
       <!-- Logs Tab -->
       <div class="tab-pane" id="logs">
-        <h2>Logs</h2>
-        <div style="margin-bottom: 16px;">
-          <button onclick="refreshLogs()" class="secondary">Refresh</button>
-          <button onclick="clearLogsView()" class="secondary">Clear View</button>
-          <button onclick="openLogsFolder()" class="secondary">Open Logs Folder</button>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2 class="page-title">Application Logs</h2>
+          </div>
+          <div class="page-header-actions">
+            <button onclick="refreshLogs()" class="secondary btn-sm">Refresh</button>
+            <button onclick="clearLogsView()" class="secondary btn-sm">Clear View</button>
+            <button onclick="openLogsFolder()" class="secondary btn-sm">Open Logs Folder</button>
+          </div>
         </div>
-        <pre id="logsContent" style="background: var(--bg-secondary); padding: 16px; border-radius: 4px; border: 1px solid var(--border-color); font-family: 'Courier New', monospace; font-size: 12px; max-height: 600px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word;"></pre>
+        <pre id="logsContent" class="logs-viewer"></pre>
       </div>
-      
+
       <!-- New Plugins Tab -->
       <div class="tab-pane" id="new-plugins">
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2 class="page-title">Plugin Installer</h2>
+          </div>
+        </div>
         <div class="plugin-manager-container">
           <div class="plugin-manager-panels">
-            <!-- Source Plugins Panel -->
             <div class="plugin-panel">
               <div class="plugin-panel-header">
                 <h3>Source Plugins</h3>
-                <button class="secondary" onclick="browsePluginSource()">Browse Source Folder</button>
+                <div class="plugin-panel-actions">
+                  <button class="secondary btn-sm" id="sourceToggleAllBtn" onclick="toggleAllSourcePlugins()" disabled>Toggle All</button>
+                  <button class="secondary btn-sm" onclick="browsePluginSource()">Browse Source</button>
+                </div>
               </div>
               <div class="plugin-panel-content">
-                <div id="pluginSourcePath" style="margin-bottom: 12px; font-size: 13px; color: var(--text-secondary);">
+                <div id="pluginSourcePath" style="margin-bottom: 12px; font-size: 12px; color: var(--text-muted);">
                   No source folder selected
                 </div>
                 <div id="pluginSourceList" class="plugin-list">
@@ -310,12 +388,13 @@
                 </div>
               </div>
             </div>
-            
-            <!-- Destination Servers Panel -->
             <div class="plugin-panel">
               <div class="plugin-panel-header">
                 <h3>Destination Servers</h3>
-                <button class="secondary" onclick="refreshPluginDestinations()">Refresh</button>
+                <div class="plugin-panel-actions">
+                  <button class="secondary btn-sm" id="destToggleAllBtn" onclick="toggleAllDestinations()" disabled>Toggle All</button>
+                  <button class="secondary btn-sm" onclick="refreshPluginDestinations()">Refresh</button>
+                </div>
               </div>
               <div class="plugin-panel-content">
                 <div id="pluginDestinationList" class="plugin-list">
@@ -324,70 +403,97 @@
               </div>
             </div>
           </div>
-          
-          <!-- Install Actions -->
           <div class="plugin-install-actions">
-            <button onclick="installSelectedPlugins()" id="installPluginsBtn" disabled>
+            <button onclick="installSelectedPlugins()" id="installPluginsBtn" class="btn-accent" disabled>
               Install Selected Plugins
             </button>
           </div>
         </div>
       </div>
-      
+
+      <!-- Plugin Toggle Tab -->
       <div class="tab-pane" id="plugin-toggle">
-        <div style="max-width: 1200px;">
-          <h2>Plugin Toggle</h2>
-          
-          <!-- Server Selection -->
-          <div class="form-group" style="margin-bottom: 20px;">
-            <label>Select Server</label>
-            <select id="pluginToggleServerSelect" style="width: 100%; max-width: 600px;">
-              <option value="">-- Select a server --</option>
-            </select>
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2 class="page-title">Plugin Toggle</h2>
           </div>
-          
-          <!-- Plugin Folders List -->
-          <div id="pluginToggleFoldersContainer" style="display: none;">
-            <div style="margin-bottom: 16px;">
-              <h3>Plugin Folders</h3>
-              <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 12px;">
-                Select one or more folders to toggle. Folders with "_OFF" suffix are disabled.
-              </p>
+        </div>
+        <div class="form-group plugin-toggle-select-group" style="max-width: 600px; margin-bottom: 20px;">
+          <label for="pluginToggleServerSelect">Select Server</label>
+          <select id="pluginToggleServerSelect" class="admin-select-native">
+            <option value="">Select a server</option>
+          </select>
+        </div>
+        <div id="pluginToggleFoldersContainer" style="display: none;">
+          <p class="step-description" style="margin-bottom: 12px;">
+            Select folders to toggle. Folders with "_OFF" suffix are disabled.
+          </p>
+          <div id="pluginToggleFoldersList" class="plugin-folders-list">
+            <div class="empty-state">Select a server to view plugin folders</div>
+          </div>
+          <div class="button-group" style="margin-top: 0;">
+            <button onclick="togglePluginsForCurrentServer()" id="toggleCurrentServerBtn" disabled type="button">
+              Toggle for Current Server
+            </button>
+            <button onclick="togglePluginsForAllServers()" id="toggleAllServersBtn" disabled class="secondary" type="button">
+              Toggle for All Servers
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settings Tab -->
+      <div class="tab-pane" id="settings">
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2 class="page-title">Settings</h2>
+            <p class="page-description">Application preferences and updates.</p>
+          </div>
+        </div>
+        <div class="settings-panel">
+          <div class="settings-row">
+            <div>
+              <div class="settings-label">Theme</div>
+              <div class="settings-hint">Switch between dark and light mode.</div>
             </div>
-            
-            <div id="pluginToggleFoldersList" style="
-              background: var(--bg-secondary);
-              border: 1px solid var(--border-color);
-              border-radius: 4px;
-              padding: 12px;
-              max-height: 400px;
-              overflow-y: auto;
-              margin-bottom: 20px;
-            ">
-              <div class="empty-state">Select a server to view plugin folders</div>
+            <button class="secondary btn-outline" id="themeToggle" type="button">
+              <span id="themeToggleIcon">☀</span> Toggle Theme
+            </button>
+          </div>
+          <div class="settings-row">
+            <div>
+              <div class="settings-label">Version</div>
+              <div class="settings-hint" id="settingsVersionHint">Checking for updates…</div>
             </div>
-            
-            <!-- Toggle Buttons -->
-            <div class="button-group" style="margin-top: 20px;">
-              <button onclick="togglePluginsForCurrentServer()" id="toggleCurrentServerBtn" disabled>
-                Toggle for Current Server
-              </button>
-              <button onclick="togglePluginsForAllServers()" id="toggleAllServersBtn" disabled class="secondary">
-                Toggle for All Servers
-              </button>
+            <div class="version-display">
+              <svg class="version-tag-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2H2v10l9.29 9.29a1 1 0 0 0 1.41 0l6.59-6.59a1 1 0 0 0 0-1.41L12 2Z"/><path d="M7 7h.01"/></svg>
+              <span class="version-number tabular" id="settingsVersion">v2.2.2</span>
+              <span class="version-badge version-badge-update" id="settingsVersionBadge" style="display:none">Update</span>
+              <span class="version-date" id="settingsVersionDate"></span>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div>
+              <div class="settings-label">Release Notes</div>
+              <div class="settings-hint">Changelog and downloads on GitHub.</div>
+            </div>
+            <div class="settings-actions">
+              <button class="secondary btn-outline btn-sm" id="settingsReleaseNotesBtn" type="button">View releases</button>
+              <button class="btn-accent btn-sm" id="settingsUpdateBtn" type="button" style="display:none">Install Update</button>
             </div>
           </div>
         </div>
       </div>
     </div>
+    </main>
   </div>
-  
+
   <!-- Add Job Modal -->
   <div id="addJobModal" class="modal-overlay">
     <div class="modal">
       <div class="modal-header">
         <h2>Add New Backup Job</h2>
-        <button class="modal-close" onclick="closeAddJobModal()" title="Close">X</button>
+        <button class="modal-close" onclick="closeAddJobModal()" title="Close">×</button>
       </div>
       <div class="modal-body">
         <div class="step-indicator">
@@ -401,58 +507,54 @@
           <div class="step-connector" id="connector4"></div>
           <div class="step-dot" id="step5Dot">5</div>
         </div>
-        
-        <!-- Step 1: Backup Type -->
+
         <div class="wizard-step active" id="wizardStep1">
           <div class="step-title">Step 1: Backup Type</div>
           <div class="step-description">Choose which type of server to back up.</div>
           <div class="form-group" style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 16px;">
-            <label class="backup-type-option" style="flex: 1; min-width: 140px; cursor: pointer; border: 2px solid var(--border-color, #444); border-radius: 8px; padding: 20px; text-align: center; transition: border-color 0.2s, background 0.2s;">
+            <label class="backup-type-option">
               <input type="radio" name="wizardBackupType" value="ark" id="wizardBackupTypeArk" style="margin-right: 8px;">
               <strong>ARK: Survival Ascended</strong>
-              <div style="font-size: 0.9em; color: var(--text-muted, #888); margin-top: 4px;">Back up your ARK ASA server</div>
+              <div class="step-description" style="margin: 4px 0 0;">Back up your ARK ASA server</div>
             </label>
-            <label class="backup-type-option" style="flex: 1; min-width: 140px; cursor: pointer; border: 2px solid var(--border-color, #444); border-radius: 8px; padding: 20px; text-align: center; transition: border-color 0.2s, background 0.2s;">
+            <label class="backup-type-option">
               <input type="radio" name="wizardBackupType" value="minecraft" id="wizardBackupTypeMinecraft" style="margin-right: 8px;">
               <strong>Minecraft</strong>
-              <div style="font-size: 0.9em; color: var(--text-muted, #888); margin-top: 4px;">Back up your Minecraft server</div>
+              <div class="step-description" style="margin: 4px 0 0;">Back up your Minecraft server</div>
             </label>
           </div>
           <div class="error-message" id="wizardBackupTypeError"></div>
         </div>
-        
-        <!-- Step 2: Server Root Directory (ARK only) -->
+
         <div class="wizard-step" id="wizardStep2">
           <div class="step-title">Step 2: Server Root Directory</div>
           <div class="step-description">Select the root directory of your ARK: Survival Ascended server installation.</div>
           <div class="form-group">
             <label>Server Root Directory</label>
-            <div style="display: flex; gap: 8px;">
+            <div class="input-with-btn">
               <input type="text" id="wizardRootDir" readonly>
               <button class="secondary" onclick="pickWizardRootDir()">Browse</button>
             </div>
             <div class="error-message" id="wizardRootDirError"></div>
           </div>
         </div>
-        
-        <!-- Step 3: Destination Directory -->
+
         <div class="wizard-step" id="wizardStep3">
           <div class="step-title">Step 3: Backup Destination</div>
           <div class="step-description">Choose where you want to save your backup files.</div>
           <div class="form-group">
             <label>Destination Directory</label>
-            <div style="display: flex; gap: 8px;">
+            <div class="input-with-btn">
               <input type="text" id="wizardDestinationDir" readonly>
               <button class="secondary" onclick="pickWizardDestinationDir()">Browse</button>
             </div>
             <div class="error-message" id="wizardDestinationDirError"></div>
           </div>
         </div>
-        
-        <!-- Step 4 (Minecraft only): Job Configuration -->
+
         <div class="wizard-step" id="wizardStepMinecraftConfig">
           <div class="step-title">Step 4: Job Configuration</div>
-          <div class="step-description">Configure your Minecraft backup job. Saves are disabled via RCON during backup, then the server folder is copied to a staging area and zipped.</div>
+          <div class="step-description">Configure your Minecraft backup job.</div>
           <div class="form-group">
             <label>Job Name</label>
             <input type="text" id="wizardMinecraftJobName" placeholder="Enter job name">
@@ -471,8 +573,8 @@
             <div class="error-message" id="wizardMonthlyClusterMinecraftError"></div>
           </div>
           <div class="form-group">
-            <label>RCON Host (IP or hostname)</label>
-            <input type="text" id="wizardMinecraftRconHost" placeholder="e.g. 127.0.0.1 or localhost">
+            <label>RCON Host</label>
+            <input type="text" id="wizardMinecraftRconHost" placeholder="e.g. 127.0.0.1">
             <div class="error-message" id="wizardMinecraftRconHostError"></div>
           </div>
           <div class="form-group">
@@ -482,10 +584,10 @@
           </div>
           <div class="form-group">
             <label>RCON Password</label>
-            <input type="password" id="wizardMinecraftRconPassword" placeholder="RCON password from server.properties">
+            <input type="password" id="wizardMinecraftRconPassword" placeholder="RCON password">
             <div class="error-message" id="wizardMinecraftRconPasswordError"></div>
           </div>
-            <div class="form-group">
+          <div class="form-group">
             <label>Interval</label>
             <div class="interval-input">
               <input type="number" id="wizardMinecraftIntervalValue" min="1" value="1">
@@ -495,7 +597,7 @@
                 <option value="days">Days</option>
               </select>
             </div>
-            <p class="step-description" style="margin-top: 6px; font-size: 0.9em; color: var(--text-muted);">Retention: last 48 hours of backups plus the first backup of each day for 30 days.</p>
+            <p class="step-description" style="margin-top: 6px;">Retention: last 48 hours plus first backup of each day for 30 days.</p>
           </div>
           <div class="form-group">
             <div class="checkbox-item">
@@ -504,8 +606,7 @@
             </div>
           </div>
         </div>
-        
-        <!-- Step 4: Map Selection -->
+
         <div class="wizard-step" id="wizardStep4">
           <div class="step-title">Step 4: Select Map</div>
           <div class="step-description">Choose which map this backup job is for (ARK only).</div>
@@ -529,18 +630,15 @@
             <div class="error-message" id="wizardMapError"></div>
           </div>
         </div>
-        
-        <!-- Step 5: Job Configuration -->
+
         <div class="wizard-step" id="wizardStep5">
           <div class="step-title">Step 5: Job Configuration</div>
           <div class="step-description">Configure your backup job settings.</div>
-          
           <div class="form-group">
             <label>Job Name</label>
             <input type="text" id="wizardJobName" placeholder="Enter job name">
             <div class="error-message" id="wizardJobNameError"></div>
           </div>
-
           <div class="form-group">
             <label>Monthly Cluster</label>
             <select id="wizardMonthlyClusterArk">
@@ -553,7 +651,6 @@
             </select>
             <div class="error-message" id="wizardMonthlyClusterArkError"></div>
           </div>
-          
           <div class="checkbox-group">
             <label>Include in Backup:</label>
             <div class="checkbox-item">
@@ -566,14 +663,13 @@
             </div>
             <div class="checkbox-item">
               <input type="checkbox" id="wizardIncludeServerFiles">
-              <label for="wizardIncludeServerFiles" style="margin: 0;">Server INI files (Game.ini, GameUserSettings.ini)</label>
+              <label for="wizardIncludeServerFiles" style="margin: 0;">Server INI files</label>
             </div>
             <div class="checkbox-item">
               <input type="checkbox" id="wizardIncludePluginConfigs">
-              <label for="wizardIncludePluginConfigs" style="margin: 0;">Plugin config files (config.json)</label>
+              <label for="wizardIncludePluginConfigs" style="margin: 0;">Plugin config files</label>
             </div>
           </div>
-          
           <div class="form-row">
             <div class="form-group">
               <label>Interval</label>
@@ -586,13 +682,11 @@
                 </select>
               </div>
             </div>
-            
             <div class="form-group">
               <label>Retention (days)</label>
               <input type="number" id="wizardRetentionDays" min="1" value="7">
             </div>
           </div>
-          
           <div class="form-group">
             <div class="checkbox-item">
               <input type="checkbox" id="wizardEnabled">
@@ -611,9 +705,8 @@
       </div>
     </div>
   </div>
-  
+
   <script>
-    // Hide form immediately when DOM is ready
     document.addEventListener('DOMContentLoaded', function() {
       const form = document.getElementById('jobFormContainer');
       if (form) {
@@ -623,55 +716,40 @@
         form.style.overflow = 'hidden';
       }
     });
-    // Also try immediately in case DOM is already loaded
-    (function() {
-      const form = document.getElementById('jobFormContainer');
-      if (form) {
-        form.style.display = 'none';
-        form.style.visibility = 'hidden';
-        form.style.height = '0';
-        form.style.overflow = 'hidden';
-      }
-    })();
   </script>
-  
-  <!-- Plugin Installation Confirmation Modal -->
+
+  <!-- Plugin Confirmation Modal -->
   <div id="pluginConfirmModal" class="modal-overlay">
     <div class="modal">
       <div class="modal-header">
         <h2>Confirm Plugin Installation</h2>
-        <button class="modal-close" onclick="closePluginConfirmModal()" title="Close">X</button>
+        <button class="modal-close" onclick="closePluginConfirmModal()" title="Close">×</button>
       </div>
       <div class="modal-body">
-        <div id="pluginConfirmContent" style="padding: 20px; line-height: 1.6;">
-          <!-- Confirmation details will be inserted here -->
-        </div>
-        <div class="button-group" style="justify-content: flex-end; margin-top: 20px; gap: 10px;">
+        <div id="pluginConfirmContent" style="line-height: 1.6;"></div>
+        <div class="button-group" style="justify-content: flex-end; margin-top: 20px;">
           <button class="secondary" onclick="closePluginConfirmModal()">Cancel</button>
           <button onclick="proceedWithPluginInstallation()">Install</button>
         </div>
       </div>
     </div>
   </div>
-  
-  <!-- Plugin Installation Results Modal -->
+
+  <!-- Plugin Results Modal -->
   <div id="pluginResultsModal" class="modal-overlay">
     <div class="modal">
       <div class="modal-header">
         <h2 id="pluginResultsTitle">Installation Results</h2>
       </div>
       <div class="modal-body">
-        <div id="pluginResultsContent" style="padding: 20px; line-height: 1.6;">
-          <!-- Results will be inserted here -->
-        </div>
+        <div id="pluginResultsContent" style="line-height: 1.6;"></div>
         <div class="button-group" style="justify-content: flex-end; margin-top: 20px;">
           <button onclick="closePluginResultsModal()">Close</button>
         </div>
       </div>
     </div>
   </div>
-  
+
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
-
