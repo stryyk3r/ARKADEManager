@@ -1,9 +1,11 @@
 # Public Assets
 
-Place your logo files here:
+Place the ARKADE primary logo here:
 
-- `logo-light.png` - Logo for light theme
-- `logo-dark.png` - Logo for dark theme
+- `Icon_ArkadeLogo.png` — sidebar / app brand (same asset as the ARKADE Website header)
 
-These files will be served at the root path (`/logo-light.png` and `/logo-dark.png`).
+Optional theme-specific variants:
+
+- `logo-light.png` — Logo for light theme
+- `logo-dark.png` — Logo for dark theme
 

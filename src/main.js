@@ -9,21 +9,25 @@ let jobsRefreshInterval = null;
 let statusUpdateInterval = null;
 let logsRefreshInterval = null;
 let updateCheckInterval = null;
+let allJobs = [];
+let currentRunningJob = null;
+const GITHUB_RELEASES_URL = 'https://github.com/stryyk3r/ARKADEManager/releases';
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
-  // Load theme
+  // Load theme (default dark to match server manager style)
   try {
     const config = await invoke('get_config');
-    if (config.theme) {
-      document.documentElement.setAttribute('data-theme', config.theme);
-    }
+    const theme = config.theme || 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+    updateThemeIcon(theme);
   } catch (e) {
-    console.error('Failed to load config:', e);
+    document.documentElement.setAttribute('data-theme', 'dark');
+    updateThemeIcon('dark');
   }
   
   // Setup tab switching
-  document.querySelectorAll('.tab').forEach(tab => {
+  document.querySelectorAll('.nav-item').forEach(tab => {
     tab.addEventListener('click', () => {
       const tabName = tab.dataset.tab;
       switchTab(tabName);
@@ -32,15 +36,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Theme toggle
   document.getElementById('themeToggle').addEventListener('click', async () => {
-    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
     const newTheme = currentTheme === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', newTheme);
+    updateThemeIcon(newTheme);
     try {
       await invoke('set_theme', { theme: newTheme });
     } catch (e) {
       console.error('Failed to save theme:', e);
     }
   });
+
+  // Job search & filter
+  const jobSearchInput = document.getElementById('jobSearchInput');
+  const jobStatusFilter = document.getElementById('jobStatusFilter');
+  const jobTypeFilter = document.getElementById('jobTypeFilter');
+  if (jobSearchInput) jobSearchInput.addEventListener('input', applyJobFilters);
+  if (jobStatusFilter) jobStatusFilter.addEventListener('change', applyJobFilters);
+  if (jobTypeFilter) jobTypeFilter.addEventListener('change', applyJobFilters);
   
   // Load initial jobs
   await refreshJobs();
@@ -94,10 +107,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (updateBox) {
     updateBox.addEventListener('click', handleUpdateClick);
   }
+  const settingsUpdateBtn = document.getElementById('settingsUpdateBtn');
+  if (settingsUpdateBtn) {
+    settingsUpdateBtn.addEventListener('click', handleUpdateClick);
+  }
+
+  const openReleaseNotes = () => {
+    invoke('open_external_url', { url: GITHUB_RELEASES_URL }).catch(err => {
+      console.error('Failed to open release notes:', err);
+    });
+  };
+  document.getElementById('settingsReleaseNotesBtn')?.addEventListener('click', openReleaseNotes);
   
   // Initialize Plugin Toggle tab
   await loadPluginToggleServers();
-  
+  initAdminSelect(document.getElementById('pluginToggleServerSelect'));
+
   const pluginToggleServerSelect = document.getElementById('pluginToggleServerSelect');
   if (pluginToggleServerSelect) {
     pluginToggleServerSelect.addEventListener('change', async (e) => {
@@ -135,10 +160,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function switchTab(tabName) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(t => {
+    t.classList.remove('active');
+  });
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-  
-  document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+
+  const activeTab = document.querySelector(`.nav-item[data-tab="${tabName}"]`);
+  if (activeTab) activeTab.classList.add('active');
   document.getElementById(tabName).classList.add('active');
   
   // Load plugin destinations when new plugins tab is opened
@@ -687,7 +715,7 @@ function showBackupProgress(jobName, percent) {
   const pctEl = document.getElementById('backupProgressPct');
   const barEl = document.getElementById('backupProgressBar');
   if (!card || !nameEl || !pctEl || !barEl) return;
-  card.style.display = 'block';
+  card.classList.add('show');
   nameEl.textContent = jobName;
   pctEl.textContent = percent + '%';
   barEl.style.width = percent + '%';
@@ -695,7 +723,125 @@ function showBackupProgress(jobName, percent) {
 
 function hideBackupProgress() {
   const card = document.getElementById('backupProgressCard');
-  if (card) card.style.display = 'none';
+  if (card) card.classList.remove('show');
+}
+
+function updateThemeIcon(theme) {
+  const icon = document.getElementById('themeToggleIcon');
+  if (icon) icon.textContent = theme === 'dark' ? '☀' : '☾';
+}
+
+const JOB_GROUP_ORDER = ['asa', 'ase', 'minecraft', 'palworld'];
+
+const JOB_GROUP_META = {
+  asa: { label: 'ARK: Survival Ascended', letter: 'A', color: 'teal' },
+  ase: { label: 'ARK: Survival Evolved', letter: 'A', color: 'yellow' },
+  minecraft: { label: 'Minecraft', letter: 'M', color: 'green' },
+  palworld: { label: 'Palworld', letter: 'P', color: 'blue' },
+};
+
+function getJobGroupKey(job) {
+  if (job.job_type === 'minecraft') return 'minecraft';
+  const cluster = job.monthly_cluster || '';
+  if (cluster === 'ASE Legacy') return 'ase';
+  if (cluster === 'Palworld') return 'palworld';
+  return 'asa';
+}
+
+function computeSuccessRate(jobs) {
+  const enabled = (jobs || []).filter(j => j.enabled);
+  if (enabled.length === 0) return '—';
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  const ok = enabled.filter(j => {
+    if (j.last_error) return false;
+    if (!j.last_run_at) return false;
+    return new Date(j.last_run_at).getTime() > dayAgo;
+  }).length;
+  return `${Math.round((ok / enabled.length) * 100)}%`;
+}
+
+function computeTotalStorage(jobs) {
+  const total = (jobs || []).reduce((sum, j) => sum + (j.last_file_size || 0), 0);
+  return formatFileSize(total);
+}
+
+function getJobRowState(job) {
+  if (currentRunningJob && currentRunningJob === job.name) {
+    return { dot: 'running', sub: 'in progress', running: true };
+  }
+  if (job.last_error) {
+    const lower = String(job.last_error).toLowerCase();
+    const isWarning = lower.includes('completed with warnings') || lower.includes('warning');
+    return { dot: isWarning ? 'paused' : 'error', sub: isWarning ? 'warning' : 'error', running: false };
+  }
+  if (!job.enabled) {
+    return { dot: 'paused', sub: 'paused', running: false };
+  }
+  return { dot: 'online', sub: '', running: false };
+}
+
+function jobMatchesFilter(job) {
+  const search = (document.getElementById('jobSearchInput')?.value || '').toLowerCase().trim();
+  const statusFilter = document.getElementById('jobStatusFilter')?.value || 'all';
+  const typeFilter = document.getElementById('jobTypeFilter')?.value || 'all';
+
+  if (typeFilter !== 'all' && (job.job_type || 'ark') !== typeFilter) return false;
+
+  if (statusFilter === 'enabled' && !job.enabled) return false;
+  if (statusFilter === 'disabled' && job.enabled) return false;
+  if (statusFilter === 'error' && !job.last_error) return false;
+
+  if (search) {
+    const haystack = [
+      job.name,
+      job.map,
+      job.monthly_cluster,
+      job.root_dir,
+      job.destination_dir,
+      job.job_type || 'ark'
+    ].join(' ').toLowerCase();
+    if (!haystack.includes(search)) return false;
+  }
+  return true;
+}
+
+function applyJobFilters() {
+  document.querySelectorAll('#jobsTableBody tr[data-job-id]').forEach(row => {
+    const jobId = row.dataset.jobId;
+    const job = allJobs.find(j => j.id === jobId);
+    row.classList.toggle('hidden-row', job ? !jobMatchesFilter(job) : false);
+  });
+
+  document.querySelectorAll('#jobsTableBody tr.group-header-row').forEach(groupRow => {
+    const groupKey = groupRow.dataset.groupKey;
+    const jobRows = [...document.querySelectorAll(`#jobsTableBody tr[data-job-id][data-group="${groupKey}"]`)]
+      .filter(r => !r.classList.contains('hidden-row'));
+    groupRow.classList.toggle('hidden-row', jobRows.length === 0);
+  });
+
+  const jobsPanel = document.getElementById('jobsPanel');
+  const visibleJobs = document.querySelectorAll('#jobsTableBody tr[data-job-id]:not(.hidden-row)').length;
+  if (jobsPanel) jobsPanel.style.display = allJobs.length > 0 ? '' : 'none';
+}
+
+function updateJobCounts(jobs) {
+  const list = jobs || [];
+  const configured = document.getElementById('configuredJobsBadge');
+  if (configured) configured.textContent = `${list.length} configured`;
+
+  const enabled = list.filter(j => j.enabled).length;
+  const saving = currentRunningJob ? 1 : 0;
+
+  const activeValue = document.getElementById('statActiveValue');
+  const activeMeta = document.getElementById('statActiveMeta');
+  if (activeValue) activeValue.textContent = String(saving);
+  if (activeMeta) activeMeta.textContent = saving === 1 ? '1 saving' : `${saving} saving`;
+
+  const successValue = document.getElementById('statSuccessValue');
+  if (successValue) successValue.textContent = computeSuccessRate(list);
+
+  const storageValue = document.getElementById('statStorageValue');
+  if (storageValue) storageValue.textContent = computeTotalStorage(list);
 }
 
 window.refreshJobs = async () => {
@@ -859,131 +1005,172 @@ function collectJobData() {
 }
 
 function renderJobsTable(jobs) {
-  const arkJobs = (jobs || []).filter(j => (j.job_type || 'ark') === 'ark');
-  const minecraftJobs = (jobs || []).filter(j => j.job_type === 'minecraft');
-
-  const arkSection = document.getElementById('backupSectionArk');
-  const minecraftSection = document.getElementById('backupSectionMinecraft');
-  const arkTable = document.getElementById('jobsTableArk');
-  const minecraftTable = document.getElementById('jobsTableMinecraft');
-  const arkEmpty = document.getElementById('arkJobsEmpty');
-  const minecraftEmpty = document.getElementById('minecraftJobsEmpty');
-
+  allJobs = jobs || [];
   const emptyAll = document.getElementById('backupEmptyAll');
-  const hasAny = (jobs || []).length > 0;
+  const toolbar = document.getElementById('backupToolbar');
+  const jobsPanel = document.getElementById('jobsPanel');
+  const tbody = document.getElementById('jobsTableBody');
+  const hasAny = allJobs.length > 0;
 
   if (emptyAll) emptyAll.style.display = hasAny ? 'none' : 'block';
+  if (toolbar) toolbar.style.display = hasAny ? '' : 'none';
+  if (jobsPanel) jobsPanel.style.display = hasAny ? '' : 'none';
 
-  if (arkSection) arkSection.style.display = hasAny && arkJobs.length > 0 ? '' : 'none';
-  if (arkTable) arkTable.style.display = arkJobs.length > 0 ? '' : 'none';
-  if (arkEmpty) arkEmpty.style.display = arkJobs.length > 0 ? 'none' : 'block';
+  updateJobCounts(allJobs);
+  if (!tbody) return;
+  tbody.innerHTML = '';
 
-  if (minecraftSection) minecraftSection.style.display = hasAny && minecraftJobs.length > 0 ? '' : 'none';
-  if (minecraftTable) minecraftTable.style.display = minecraftJobs.length > 0 ? '' : 'none';
-  if (minecraftEmpty) minecraftEmpty.style.display = minecraftJobs.length > 0 ? 'none' : 'block';
-
-  const tbodyArk = document.getElementById('jobsTableBodyArk');
-  const tbodyMinecraft = document.getElementById('jobsTableBodyMinecraft');
-  if (tbodyArk) tbodyArk.innerHTML = '';
-  if (tbodyMinecraft) tbodyMinecraft.innerHTML = '';
-
-  function appendJobRow(tbody, job) {
-    if (!tbody) return;
-    const row = tbody.insertRow();
-    row.dataset.jobId = job.id;
-
-    row.insertCell().textContent = job.name;
-    row.insertCell().textContent = `${job.interval_value} ${job.interval_unit}`;
-    row.insertCell().textContent = job.next_run_at ? new Date(job.next_run_at).toLocaleString() : 'N/A';
-
-    const lastSaveCell = row.insertCell();
-    if (job.last_error) {
-      const msg = String(job.last_error || '');
-      const lower = msg.toLowerCase();
-      const isWarning = lower.includes('completed with warnings') || lower.includes('warning');
-      lastSaveCell.innerHTML = isWarning
-        ? '<span style="color: #d18b00; font-weight: bold;">WARNING</span>'
-        : '<span style="color: red; font-weight: bold;">ERROR</span>';
-      lastSaveCell.title = msg;
-    } else {
-      lastSaveCell.textContent = job.last_run_at ? new Date(job.last_run_at).toLocaleString() : 'Never';
-    }
-
-    row.insertCell().textContent = job.last_file_size ? formatFileSize(job.last_file_size) : 'N/A';
-
-    const menuCell = row.insertCell();
-    menuCell.style.textAlign = 'center';
-    menuCell.style.padding = '4px';
-
-    const menuContainer = document.createElement('div');
-    menuContainer.className = 'job-menu';
-
-    const menuButton = document.createElement('button');
-    menuButton.className = 'job-menu-button';
-    menuButton.textContent = '⋯';
-    menuButton.onclick = (e) => {
-      e.stopPropagation();
-      document.querySelectorAll('.job-menu-dropdown').forEach(d => d.classList.remove('show'));
-      const dropdown = menuContainer.querySelector('.job-menu-dropdown');
-      dropdown.classList.toggle('show');
-    };
-
-    const dropdown = document.createElement('div');
-    dropdown.className = 'job-menu-dropdown';
-
-    const runItem = document.createElement('button');
-    runItem.className = 'job-menu-item';
-    runItem.textContent = 'Run Now';
-    runItem.onclick = (e) => {
-      e.stopPropagation();
-      dropdown.classList.remove('show');
-      runJobNow(job.id);
-    };
-
-    const backupLocationItem = document.createElement('button');
-    backupLocationItem.className = 'job-menu-item';
-    backupLocationItem.textContent = 'Backup Location';
-    backupLocationItem.onclick = (e) => {
-      e.stopPropagation();
-      dropdown.classList.remove('show');
-      openBackupLocation(job.destination_dir);
-    };
-
-    const editItem = document.createElement('button');
-    editItem.className = 'job-menu-item';
-    editItem.textContent = 'Edit';
-    editItem.onclick = (e) => {
-      e.stopPropagation();
-      dropdown.classList.remove('show');
-      updateJob(job.id);
-    };
-
-    const deleteItem = document.createElement('button');
-    deleteItem.className = 'job-menu-item danger';
-    deleteItem.textContent = 'Delete';
-    deleteItem.onclick = (e) => {
-      e.stopPropagation();
-      dropdown.classList.remove('show');
-      deleteJob(job.id);
-    };
-
-    dropdown.appendChild(runItem);
-    dropdown.appendChild(backupLocationItem);
-    dropdown.appendChild(editItem);
-    dropdown.appendChild(deleteItem);
-    menuContainer.appendChild(menuButton);
-    menuContainer.appendChild(dropdown);
-    menuCell.appendChild(menuContainer);
+  const grouped = {};
+  for (const job of allJobs) {
+    const key = getJobGroupKey(job);
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(job);
   }
 
-  arkJobs.forEach(job => appendJobRow(tbodyArk, job));
-  minecraftJobs.forEach(job => appendJobRow(tbodyMinecraft, job));
+  for (const groupKey of JOB_GROUP_ORDER) {
+    const groupJobs = grouped[groupKey];
+    if (!groupJobs || groupJobs.length === 0) continue;
+    const meta = JOB_GROUP_META[groupKey];
+    const groupSize = groupJobs.reduce((sum, j) => sum + (j.last_file_size || 0), 0);
 
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.job-menu')) {
-      document.querySelectorAll('.job-menu-dropdown').forEach(d => d.classList.remove('show'));
+    const headerRow = tbody.insertRow();
+    headerRow.className = 'group-header-row';
+    headerRow.dataset.groupKey = groupKey;
+    const headerCell = headerRow.insertCell();
+    headerCell.colSpan = 6;
+    headerCell.innerHTML = `
+      <div class="group-header">
+        <div class="group-header-left">
+          <span class="group-accent group-accent-${meta.color}"></span>
+          <span class="group-icon group-icon-${meta.color}">${meta.letter}</span>
+          <span class="group-title">${escapeHtml(meta.label)}</span>
+        </div>
+        <div class="group-header-right">
+          <span class="group-size">${escapeHtml(formatFileSize(groupSize))}</span>
+          <span class="online-pill"><span class="status-dot"></span>Online</span>
+        </div>
+      </div>`;
+
+    for (const job of groupJobs) {
+      appendUnifiedJobRow(tbody, job, groupKey);
     }
-  });
+  }
+
+  applyJobFilters();
+
+  if (!window._jobMenuListenerAttached) {
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.job-menu')) {
+        document.querySelectorAll('.job-menu-dropdown').forEach(d => d.classList.remove('show'));
+      }
+    });
+    window._jobMenuListenerAttached = true;
+  }
+}
+
+function appendUnifiedJobRow(tbody, job, groupKey) {
+  const row = tbody.insertRow();
+  row.dataset.jobId = job.id;
+  row.dataset.group = groupKey;
+  const state = getJobRowState(job);
+
+  const nameCell = row.insertCell();
+  nameCell.innerHTML = `
+    <div class="job-row-name">
+      <span class="job-status-dot ${state.dot}"></span>
+      <div class="job-name-block">
+        <span class="job-name-primary ${state.running ? 'running' : ''}">${escapeHtml(job.name)}</span>
+        ${state.sub ? `<span class="job-name-sub ${state.running ? 'progress' : ''}">${escapeHtml(state.sub)}</span>` : ''}
+      </div>
+    </div>`;
+
+  const intervalCell = row.insertCell();
+  intervalCell.textContent = `${job.interval_value} ${job.interval_unit}`;
+  intervalCell.className = 'cell-metric cell-metric-muted';
+
+  const nextCell = row.insertCell();
+  nextCell.textContent = job.next_run_at ? new Date(job.next_run_at).toLocaleString() : 'N/A';
+
+  const lastCell = row.insertCell();
+  if (job.last_error && !state.running) {
+    lastCell.innerHTML = state.sub === 'warning'
+      ? '<span class="cell-metric cell-metric-warn">WARNING</span>'
+      : '<span class="cell-metric cell-metric-bad">ERROR</span>';
+    lastCell.title = String(job.last_error);
+  } else {
+    lastCell.textContent = job.last_run_at ? new Date(job.last_run_at).toLocaleString() : 'Never';
+    lastCell.className = job.last_run_at ? 'cell-metric cell-metric-good' : 'cell-metric cell-metric-muted';
+  }
+
+  const sizeCell = row.insertCell();
+  sizeCell.textContent = job.last_file_size ? formatFileSize(job.last_file_size) : 'N/A';
+  sizeCell.className = 'cell-metric cell-metric-muted';
+
+  const actionsCell = row.insertCell();
+  actionsCell.className = 'cell-actions';
+  const menuContainer = document.createElement('div');
+  menuContainer.className = 'job-menu';
+  const menuButton = document.createElement('button');
+  menuButton.className = 'job-menu-button';
+  menuButton.type = 'button';
+  menuButton.textContent = '⋯';
+  menuButton.onclick = (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.job-menu-dropdown').forEach(d => d.classList.remove('show'));
+    menuContainer.querySelector('.job-menu-dropdown').classList.toggle('show');
+  };
+  const dropdown = document.createElement('div');
+  dropdown.className = 'job-menu-dropdown';
+
+  const runItem = document.createElement('button');
+  runItem.className = 'job-menu-item';
+  runItem.type = 'button';
+  runItem.textContent = 'Run Now';
+  runItem.onclick = (e) => { e.stopPropagation(); dropdown.classList.remove('show'); runJobNow(job.id); };
+
+  const backupLocationItem = document.createElement('button');
+  backupLocationItem.className = 'job-menu-item';
+  backupLocationItem.type = 'button';
+  backupLocationItem.textContent = 'Backup Location';
+  backupLocationItem.onclick = (e) => {
+    e.stopPropagation();
+    dropdown.classList.remove('show');
+    openBackupLocation(job.destination_dir);
+  };
+
+  const editItem = document.createElement('button');
+  editItem.className = 'job-menu-item';
+  editItem.type = 'button';
+  editItem.textContent = 'Edit';
+  editItem.onclick = (e) => {
+    e.stopPropagation();
+    dropdown.classList.remove('show');
+    updateJob(job.id);
+  };
+
+  const deleteItem = document.createElement('button');
+  deleteItem.className = 'job-menu-item danger';
+  deleteItem.type = 'button';
+  deleteItem.textContent = 'Delete';
+  deleteItem.onclick = (e) => {
+    e.stopPropagation();
+    dropdown.classList.remove('show');
+    deleteJob(job.id);
+  };
+
+  dropdown.appendChild(runItem);
+  dropdown.appendChild(backupLocationItem);
+  dropdown.appendChild(editItem);
+  dropdown.appendChild(deleteItem);
+  menuContainer.appendChild(menuButton);
+  menuContainer.appendChild(dropdown);
+  actionsCell.appendChild(menuContainer);
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
 }
 
 function setJobFormVisibilityForType(jobType) {
@@ -1039,19 +1226,83 @@ async function updateStatus() {
   }
 }
 
+function resolveCurrentJobName(currentJobId) {
+  if (!currentJobId) return null;
+  const job = allJobs.find(j => j.id === currentJobId);
+  return job ? job.name : null;
+}
+
+function formatCurrentJobLabel(currentJobId) {
+  return resolveCurrentJobName(currentJobId) || 'None';
+}
+
 function updateStatusFromEvent(status) {
   const indicator = document.getElementById('runningIndicator');
-  if (status.running) {
-    indicator.classList.remove('stopped');
-    document.getElementById('schedulerStatus').textContent = 'Running';
-  } else {
-    indicator.classList.add('stopped');
-    document.getElementById('schedulerStatus').textContent = 'Stopped';
-  }
-  
-  document.getElementById('queueSize').textContent = status.queue_size || 0;
-  document.getElementById('currentJob').textContent = status.current_job || 'None';
-  document.getElementById('lastTick').textContent = status.last_tick ? new Date(status.last_tick).toLocaleString() : 'Never';
+  const hasActiveJob = !!status.current_job;
+
+  if (indicator) indicator.classList.toggle('stopped', !hasActiveJob);
+
+  const schedulerStatus = document.getElementById('schedulerStatus');
+  if (schedulerStatus) schedulerStatus.textContent = hasActiveJob ? 'Running' : 'Idle';
+  const queueSizeEl = document.getElementById('queueSize');
+  if (queueSizeEl) queueSizeEl.textContent = status.queue_size || 0;
+  const currentJobEl = document.getElementById('currentJob');
+  if (currentJobEl) currentJobEl.textContent = formatCurrentJobLabel(status.current_job);
+  const lastTickEl = document.getElementById('lastTick');
+  if (lastTickEl) lastTickEl.textContent = status.last_tick ? new Date(status.last_tick).toLocaleString() : 'Never';
+
+  currentRunningJob = resolveCurrentJobName(status.current_job);
+
+  const queue = status.queue_size || 0;
+
+  const sidebarStatus = document.getElementById('sidebarSchedulerStatus');
+  const sidebarLabel = document.getElementById('sidebarSchedulerLabel');
+  const sidebarCurrentJob = document.getElementById('sidebarCurrentJob');
+  const sidebarQueueSize = document.getElementById('sidebarQueueSize');
+
+  if (sidebarStatus) sidebarStatus.classList.toggle('idle', !hasActiveJob);
+  if (sidebarLabel) sidebarLabel.textContent = hasActiveJob ? 'Running' : 'Idle';
+  if (sidebarCurrentJob) sidebarCurrentJob.textContent = formatCurrentJobLabel(status.current_job);
+  if (sidebarQueueSize) sidebarQueueSize.textContent = queue;
+
+  const statQueueValue = document.getElementById('statQueueValue');
+  const statQueueMeta = document.getElementById('statQueueMeta');
+  if (statQueueValue) statQueueValue.textContent = queue;
+  if (statQueueMeta) statQueueMeta.textContent = queue === 1 ? '1 waiting' : `${queue} waiting`;
+
+  updateJobCounts(allJobs);
+  refreshJobRowStates();
+}
+
+function refreshJobRowStates() {
+  document.querySelectorAll('#jobsTableBody tr[data-job-id]').forEach(row => {
+    const job = allJobs.find(j => j.id === row.dataset.jobId);
+    if (!job) return;
+    const state = getJobRowState(job);
+    const dot = row.querySelector('.job-status-dot');
+    if (dot) dot.className = `job-status-dot ${state.dot}`;
+    const primary = row.querySelector('.job-name-primary');
+    const block = row.querySelector('.job-name-block');
+    if (primary) {
+      primary.textContent = job.name;
+      primary.classList.toggle('running', state.running);
+    }
+    let sub = row.querySelector('.job-name-sub');
+    if (state.sub) {
+      if (!sub && block) {
+        sub = document.createElement('span');
+        sub.className = `job-name-sub ${state.running ? 'progress' : ''}`;
+        block.appendChild(sub);
+      }
+      if (sub) {
+        sub.textContent = state.sub;
+        sub.className = `job-name-sub ${state.running ? 'progress' : ''}`;
+        sub.style.display = '';
+      }
+    } else if (sub) {
+      sub.remove();
+    }
+  });
 }
 
 function formatFileSize(bytes) {
@@ -1123,23 +1374,30 @@ async function loadSourcePlugins(sourcePath) {
 
 function renderSourcePlugins() {
   const container = document.getElementById('pluginSourceList');
-  
+  const toggleBtn = document.getElementById('sourceToggleAllBtn');
+
   if (pluginSourcePlugins.length === 0) {
     container.innerHTML = '<div class="empty-state">No plugin folders found in source directory</div>';
+    if (toggleBtn) toggleBtn.disabled = true;
     return;
   }
-  
+
   container.innerHTML = pluginSourcePlugins.map((plugin, index) => `
     <div class="plugin-item">
       <input type="checkbox" id="source-plugin-${index}" data-path="${plugin.path}">
       <label for="source-plugin-${index}" class="plugin-item-label">${plugin.name}</label>
     </div>
   `).join('');
-  
-  // Attach event listeners to checkboxes
+
   container.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-    checkbox.addEventListener('change', updateInstallButtonState);
+    checkbox.addEventListener('change', () => {
+      updateInstallButtonState();
+      updatePluginToggleAllLabels();
+    });
   });
+
+  if (toggleBtn) toggleBtn.disabled = false;
+  updatePluginToggleAllLabels();
 }
 
 window.refreshPluginDestinations = async () => {
@@ -1150,31 +1408,75 @@ window.refreshPluginDestinations = async () => {
     updateInstallButtonState();
   } catch (error) {
     console.error('Error loading destinations:', error);
-    document.getElementById('pluginDestinationList').innerHTML = 
+    document.getElementById('pluginDestinationList').innerHTML =
       `<div class="empty-state" style="color: var(--error);">Error: ${error}</div>`;
+    const toggleBtn = document.getElementById('destToggleAllBtn');
+    if (toggleBtn) toggleBtn.disabled = true;
   }
 };
 
 function renderDestinations() {
   const container = document.getElementById('pluginDestinationList');
-  
+  const toggleBtn = document.getElementById('destToggleAllBtn');
+
   if (pluginDestinations.length === 0) {
     container.innerHTML = '<div class="empty-state">No ARK servers found. Add backup jobs with a server root, or ensure C:\\arkservers\\asaservers exists.</div>';
+    if (toggleBtn) toggleBtn.disabled = true;
     return;
   }
-  
+
   container.innerHTML = pluginDestinations.map((server, index) => `
     <div class="plugin-item">
       <input type="checkbox" id="dest-server-${index}" data-path="${server.plugin_path}">
       <label for="dest-server-${index}" class="plugin-item-label">${server.name}</label>
     </div>
   `).join('');
-  
-  // Attach event listeners to checkboxes
+
   container.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-    checkbox.addEventListener('change', updateInstallButtonState);
+    checkbox.addEventListener('change', () => {
+      updateInstallButtonState();
+      updatePluginToggleAllLabels();
+    });
   });
+
+  if (toggleBtn) toggleBtn.disabled = false;
+  updatePluginToggleAllLabels();
 }
+
+function updatePluginToggleAllLabels() {
+  const sourceBtn = document.getElementById('sourceToggleAllBtn');
+  const destBtn = document.getElementById('destToggleAllBtn');
+  const sourceBoxes = document.querySelectorAll('#pluginSourceList input[type="checkbox"]');
+  const destBoxes = document.querySelectorAll('#pluginDestinationList input[type="checkbox"]');
+
+  if (sourceBtn && sourceBoxes.length > 0) {
+    const allSourceChecked = [...sourceBoxes].every(cb => cb.checked);
+    sourceBtn.textContent = allSourceChecked ? 'Deselect All' : 'Select All';
+  }
+
+  if (destBtn && destBoxes.length > 0) {
+    const allDestChecked = [...destBoxes].every(cb => cb.checked);
+    destBtn.textContent = allDestChecked ? 'Deselect All' : 'Select All';
+  }
+}
+
+window.toggleAllSourcePlugins = () => {
+  const checkboxes = document.querySelectorAll('#pluginSourceList input[type="checkbox"]');
+  if (checkboxes.length === 0) return;
+  const allChecked = [...checkboxes].every(cb => cb.checked);
+  checkboxes.forEach(cb => { cb.checked = !allChecked; });
+  updatePluginToggleAllLabels();
+  updateInstallButtonState();
+};
+
+window.toggleAllDestinations = () => {
+  const checkboxes = document.querySelectorAll('#pluginDestinationList input[type="checkbox"]');
+  if (checkboxes.length === 0) return;
+  const allChecked = [...checkboxes].every(cb => cb.checked);
+  checkboxes.forEach(cb => { cb.checked = !allChecked; });
+  updatePluginToggleAllLabels();
+  updateInstallButtonState();
+};
 
 function updateInstallButtonState() {
   const sourceSelected = document.querySelectorAll('#pluginSourceList input[type="checkbox"]:checked').length > 0;
@@ -1451,13 +1753,91 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Version and Update Functions
+function formatReleaseDate(isoDate) {
+  if (!isoDate) return '';
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function updateVersionDisplay({ version, isLatest, publishedAt, updateAvailable, updateVersion }) {
+  const versionBox = document.getElementById('versionBox');
+  const statusBadge = document.getElementById('versionStatusBadge');
+  const versionDate = document.getElementById('versionDate');
+  const updateBox = document.getElementById('updateBox');
+
+  const displayVersion = version
+    ? (version.startsWith('v') ? version : `v${version}`)
+    : '';
+
+  if (versionBox && displayVersion) versionBox.textContent = displayVersion;
+
+  const sidebarVersion = document.getElementById('sidebarVersion');
+  if (sidebarVersion && displayVersion) sidebarVersion.textContent = displayVersion;
+
+  const settingsVersion = document.getElementById('settingsVersion');
+  if (settingsVersion && displayVersion) settingsVersion.textContent = displayVersion;
+
+  const settingsVersionBadge = document.getElementById('settingsVersionBadge');
+  const settingsVersionDate = document.getElementById('settingsVersionDate');
+  const settingsVersionHint = document.getElementById('settingsVersionHint');
+  const settingsUpdateBtn = document.getElementById('settingsUpdateBtn');
+
+  if (statusBadge) {
+    if (updateAvailable) {
+      statusBadge.textContent = 'Update';
+      statusBadge.className = 'version-badge version-badge-update';
+      statusBadge.style.display = '';
+    } else {
+      statusBadge.style.display = 'none';
+    }
+  }
+
+  if (settingsVersionBadge) {
+    if (updateAvailable) {
+      settingsVersionBadge.textContent = 'Update';
+      settingsVersionBadge.className = 'version-badge version-badge-update';
+      settingsVersionBadge.style.display = '';
+    } else {
+      settingsVersionBadge.style.display = 'none';
+    }
+  }
+
+  const dateLabel = publishedAt ? `on ${formatReleaseDate(publishedAt)}` : '';
+  if (versionDate) versionDate.textContent = dateLabel;
+  if (settingsVersionDate) settingsVersionDate.textContent = dateLabel;
+
+  if (settingsVersionHint) {
+    settingsVersionHint.textContent = updateAvailable
+      ? `v${updateVersion || ''} is available`
+      : isLatest
+        ? 'You are on the latest release'
+        : '';
+  }
+
+  if (updateBox) {
+    if (updateAvailable) {
+      updateBox.textContent = updateVersion ? `Install v${updateVersion}` : 'Install Update';
+      updateBox.classList.add('show');
+    } else {
+      updateBox.classList.remove('show');
+    }
+  }
+
+  if (settingsUpdateBtn) {
+    if (updateAvailable) {
+      settingsUpdateBtn.textContent = updateVersion ? `Install v${updateVersion}` : 'Install Update';
+      settingsUpdateBtn.style.display = '';
+    } else {
+      settingsUpdateBtn.style.display = 'none';
+    }
+  }
+}
+
 async function loadVersion() {
   try {
     const version = await invoke('get_app_version');
-    const versionBox = document.getElementById('versionBox');
-    if (versionBox) {
-      versionBox.textContent = `v${version}`;
-    }
+    updateVersionDisplay({ version, isLatest: true });
   } catch (e) {
     console.error('Failed to load version:', e);
   }
@@ -1466,43 +1846,120 @@ async function loadVersion() {
 async function checkForUpdates() {
   try {
     console.log('Checking for updates...');
+    const currentVersion = await invoke('get_app_version');
     const result = await invoke('check_for_updates');
     console.log('Update check result:', JSON.stringify(result));
-    const updateBox = document.getElementById('updateBox');
-    
-    if (!updateBox) {
-      console.error('Update box element not found!');
-      return;
-    }
-    
-    if (result && result.available) {
-      console.log('Update available:', result.version);
-      updateBox.textContent = `Update Available (v${result.version}) - Click to Install`;
-      updateBox.classList.add('show');
-      console.log('Update box should now be visible');
-    } else {
-      console.log('No update available. Result:', result);
-      updateBox.classList.remove('show');
-    }
+
+    updateVersionDisplay({
+      version: currentVersion,
+      isLatest: !result?.available,
+      publishedAt: result?.published_at || '',
+      updateAvailable: !!result?.available,
+      updateVersion: result?.version || '',
+    });
   } catch (e) {
     console.error('Failed to check for updates:', e);
-    console.error('Error details:', e.toString());
-    // Hide update box on error
     const updateBox = document.getElementById('updateBox');
-    if (updateBox) {
-      updateBox.classList.remove('show');
-    }
+    if (updateBox) updateBox.classList.remove('show');
   }
 }
 
 // Plugin Toggle Functions
 let selectedPluginFolders = new Set();
 
+function initAdminSelect(selectEl) {
+  if (!selectEl || selectEl.dataset.adminSelectWired === 'true') return;
+  selectEl.dataset.adminSelectWired = 'true';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'admin-select';
+  selectEl.parentNode.insertBefore(wrap, selectEl);
+  wrap.appendChild(selectEl);
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'admin-select-trigger';
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.innerHTML = `
+    <span class="admin-select-value"></span>
+    <svg class="admin-select-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="m6 9 6 6 6-6"/>
+    </svg>`;
+  wrap.appendChild(trigger);
+
+  const menu = document.createElement('div');
+  menu.className = 'admin-select-menu';
+  menu.setAttribute('role', 'listbox');
+  menu.hidden = true;
+  wrap.appendChild(menu);
+
+  const valueEl = trigger.querySelector('.admin-select-value');
+
+  function closeMenu() {
+    menu.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+  }
+
+  function syncFromSelect() {
+    const opt = selectEl.options[selectEl.selectedIndex];
+    valueEl.textContent = opt ? opt.textContent : '';
+    valueEl.classList.toggle('is-placeholder', !selectEl.value);
+    menu.querySelectorAll('.admin-select-item').forEach(item => {
+      item.classList.toggle('is-selected', item.dataset.value === selectEl.value);
+    });
+  }
+
+  function rebuildMenu() {
+    menu.innerHTML = '';
+    [...selectEl.options].forEach(opt => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'admin-select-item';
+      item.dataset.value = opt.value;
+      item.setAttribute('role', 'option');
+      item.textContent = opt.textContent;
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectEl.value = opt.value;
+        selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+        closeMenu();
+        syncFromSelect();
+      });
+      menu.appendChild(item);
+    });
+    syncFromSelect();
+  }
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willOpen = menu.hidden;
+    document.querySelectorAll('.admin-select-menu').forEach(m => { m.hidden = true; });
+    document.querySelectorAll('.admin-select-trigger').forEach(t => t.setAttribute('aria-expanded', 'false'));
+    if (willOpen) {
+      menu.hidden = false;
+      trigger.setAttribute('aria-expanded', 'true');
+    }
+  });
+
+  if (!window._adminSelectCloseListener) {
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.admin-select-menu').forEach(m => { m.hidden = true; });
+      document.querySelectorAll('.admin-select-trigger').forEach(t => t.setAttribute('aria-expanded', 'false'));
+    });
+    window._adminSelectCloseListener = true;
+  }
+
+  selectEl.addEventListener('change', syncFromSelect);
+  new MutationObserver(rebuildMenu).observe(selectEl, { childList: true });
+  rebuildMenu();
+}
+
 async function loadPluginToggleServers() {
   try {
     const servers = await invoke('get_plugin_server_roots');
     const select = document.getElementById('pluginToggleServerSelect');
-    select.innerHTML = '<option value="">-- Select a server --</option>';
+    select.innerHTML = '<option value="">Select a server</option>';
     
     servers.forEach(server => {
       const option = document.createElement('option');
