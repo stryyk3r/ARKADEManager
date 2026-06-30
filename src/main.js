@@ -1058,14 +1058,7 @@ function renderJobsTable(jobs) {
 
   applyJobFilters();
 
-  if (!window._jobMenuListenerAttached) {
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.job-menu')) {
-        document.querySelectorAll('.job-menu-dropdown').forEach(d => d.classList.remove('show'));
-      }
-    });
-    window._jobMenuListenerAttached = true;
-  }
+  ensureJobMenuListeners();
 }
 
 function appendUnifiedJobRow(tbody, job, groupKey) {
@@ -1116,8 +1109,7 @@ function appendUnifiedJobRow(tbody, job, groupKey) {
   menuButton.textContent = '⋯';
   menuButton.onclick = (e) => {
     e.stopPropagation();
-    document.querySelectorAll('.job-menu-dropdown').forEach(d => d.classList.remove('show'));
-    menuContainer.querySelector('.job-menu-dropdown').classList.toggle('show');
+    toggleJobMenu(menuButton, dropdown);
   };
   const dropdown = document.createElement('div');
   dropdown.className = 'job-menu-dropdown';
@@ -1126,7 +1118,7 @@ function appendUnifiedJobRow(tbody, job, groupKey) {
   runItem.className = 'job-menu-item';
   runItem.type = 'button';
   runItem.textContent = 'Run Now';
-  runItem.onclick = (e) => { e.stopPropagation(); dropdown.classList.remove('show'); runJobNow(job.id); };
+  runItem.onclick = (e) => { e.stopPropagation(); closeAllJobMenus(); runJobNow(job.id); };
 
   const backupLocationItem = document.createElement('button');
   backupLocationItem.className = 'job-menu-item';
@@ -1134,7 +1126,7 @@ function appendUnifiedJobRow(tbody, job, groupKey) {
   backupLocationItem.textContent = 'Backup Location';
   backupLocationItem.onclick = (e) => {
     e.stopPropagation();
-    dropdown.classList.remove('show');
+    closeAllJobMenus();
     openBackupLocation(job.destination_dir);
   };
 
@@ -1144,7 +1136,7 @@ function appendUnifiedJobRow(tbody, job, groupKey) {
   editItem.textContent = 'Edit';
   editItem.onclick = (e) => {
     e.stopPropagation();
-    dropdown.classList.remove('show');
+    closeAllJobMenus();
     updateJob(job.id);
   };
 
@@ -1154,7 +1146,7 @@ function appendUnifiedJobRow(tbody, job, groupKey) {
   deleteItem.textContent = 'Delete';
   deleteItem.onclick = (e) => {
     e.stopPropagation();
-    dropdown.classList.remove('show');
+    closeAllJobMenus();
     deleteJob(job.id);
   };
 
@@ -1165,6 +1157,60 @@ function appendUnifiedJobRow(tbody, job, groupKey) {
   menuContainer.appendChild(menuButton);
   menuContainer.appendChild(dropdown);
   actionsCell.appendChild(menuContainer);
+}
+
+function closeAllJobMenus() {
+  document.querySelectorAll('.job-menu-dropdown').forEach(d => {
+    d.classList.remove('show');
+    d.style.top = '';
+    d.style.left = '';
+    d.style.visibility = '';
+  });
+}
+
+function positionJobMenuDropdown(button, dropdown) {
+  dropdown.classList.add('show');
+  dropdown.style.visibility = 'hidden';
+
+  const rect = button.getBoundingClientRect();
+  const gap = 4;
+  const height = dropdown.offsetHeight;
+  const width = dropdown.offsetWidth;
+
+  const spaceBelow = window.innerHeight - rect.bottom - gap;
+  const spaceAbove = rect.top - gap;
+  const openBelow = spaceBelow >= height || spaceBelow >= spaceAbove;
+  const top = openBelow ? rect.bottom + gap : rect.top - gap - height;
+
+  let left = rect.right - width;
+  left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+
+  dropdown.style.top = `${Math.max(8, top)}px`;
+  dropdown.style.left = `${left}px`;
+  dropdown.style.visibility = '';
+}
+
+function toggleJobMenu(button, dropdown) {
+  const wasOpen = dropdown.classList.contains('show');
+  closeAllJobMenus();
+  if (!wasOpen) {
+    positionJobMenuDropdown(button, dropdown);
+  }
+}
+
+function ensureJobMenuListeners() {
+  if (window._jobMenuListenerAttached) return;
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.job-menu')) {
+      closeAllJobMenus();
+    }
+  });
+  const tabContent = document.querySelector('.tab-content');
+  if (tabContent) {
+    tabContent.addEventListener('scroll', closeAllJobMenus, { passive: true });
+  }
+  window.addEventListener('resize', closeAllJobMenus);
+  window._jobMenuListenerAttached = true;
 }
 
 function escapeHtml(str) {
