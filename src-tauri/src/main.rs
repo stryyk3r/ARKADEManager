@@ -4,6 +4,7 @@
 mod app_data;
 mod backup;
 mod config;
+mod data_lookup;
 mod job;
 mod map;
 mod plugins;
@@ -422,6 +423,25 @@ async fn read_logs(lines: Option<usize>) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn lookup_data_files(
+    lookup_type: String,
+    identifier: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<data_lookup::DataLookupMatch>, String> {
+    let app_data = state.app_data.lock().await;
+    data_lookup::lookup_data_files(&app_data, &lookup_type, &identifier)
+}
+
+#[tauri::command]
+async fn delete_data_files(
+    file_paths: Vec<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<data_lookup::DeleteFileResult>, String> {
+    let app_data = state.app_data.lock().await;
+    Ok(data_lookup::delete_data_files(&app_data, &file_paths))
+}
+
+#[tauri::command]
 async fn get_plugin_server_roots(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
     let app_data = state.app_data.lock().await;
     let jobs = app_data.list_jobs().map_err(|e| e.to_string())?;
@@ -794,6 +814,8 @@ fn main() {
             get_status,
             read_logs,
             open_logs_folder,
+            lookup_data_files,
+            delete_data_files,
             open_external_url,
             list_source_plugins,
             discover_plugin_destinations,

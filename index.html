@@ -14,7 +14,7 @@
         </div>
         <div class="brand-text">
           <span class="brand-name">ARKADE MANAGER</span>
-          <span class="brand-version tabular" id="sidebarVersion">v2.3.0</span>
+          <span class="brand-version tabular" id="sidebarVersion">v2.3.2</span>
         </div>
       </div>
 
@@ -35,6 +35,10 @@
         <button class="nav-item" data-tab="plugin-toggle" type="button">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           Toggle
+        </button>
+        <button class="nav-item" data-tab="data-lookup" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          Data Lookup
         </button>
 
         <div class="nav-section-label">System</div>
@@ -126,7 +130,7 @@
         <span id="queueSize" style="display:none">0</span>
         <span id="currentJob" style="display:none">None</span>
         <span id="lastTick" style="display:none">Never</span>
-        <span id="versionBox" style="display:none">v2.3.0</span>
+        <span id="versionBox" style="display:none">v2.3.2</span>
         <span id="versionStatusBadge" style="display:none"></span>
         <span id="versionDate" style="display:none"></span>
         <button id="updateBox" type="button" style="display:none"></button>
@@ -442,6 +446,72 @@
         </div>
       </div>
 
+      <!-- Data Lookup Tab -->
+      <div class="tab-pane" id="data-lookup">
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2 class="page-title">Data Lookup</h2>
+            <p class="page-description">Search player profiles and tribe files across all configured ARK servers.</p>
+          </div>
+        </div>
+
+        <div class="data-lookup-panel">
+          <div class="data-lookup-form">
+            <div class="form-group">
+              <span class="form-label">Lookup type</span>
+              <div class="data-lookup-type-toggle" role="radiogroup" aria-label="Lookup type">
+                <label class="data-lookup-type-option">
+                  <input type="radio" name="dataLookupType" value="profile" checked>
+                  Profile (EOSID)
+                </label>
+                <label class="data-lookup-type-option">
+                  <input type="radio" name="dataLookupType" value="tribe">
+                  Tribe (TribeID)
+                </label>
+              </div>
+            </div>
+            <div class="form-group data-lookup-input-group">
+              <label for="dataLookupIdentifier" id="dataLookupIdentifierLabel">EOSID</label>
+              <div class="data-lookup-search-row">
+                <input type="text" id="dataLookupIdentifier" class="data-lookup-input" placeholder="32-character hexadecimal EOSID" autocomplete="off" spellcheck="false">
+                <button onclick="searchDataLookup()" id="dataLookupSearchBtn" class="btn-accent" type="button">Search</button>
+              </div>
+              <p class="step-description" id="dataLookupHint">Searches all configured ARK backup jobs.</p>
+            </div>
+          </div>
+
+          <div class="data-lookup-results">
+            <div class="data-lookup-results-header">
+              <h3 class="data-lookup-results-title">Results</h3>
+              <span class="configured-badge" id="dataLookupResultsCount">0 matches</span>
+            </div>
+            <div id="dataLookupResultsContainer">
+              <div class="empty-state" id="dataLookupEmptyState">Enter an ID and click Search to find files.</div>
+              <table class="jobs-table data-lookup-table" id="dataLookupResultsTable" hidden>
+                <thead>
+                  <tr>
+                    <th class="data-lookup-checkbox-col">
+                      <input type="checkbox" id="dataLookupSelectAll" onchange="toggleDataLookupSelectAll()" aria-label="Select all results">
+                    </th>
+                    <th>Server</th>
+                    <th>Map</th>
+                    <th>File</th>
+                    <th>Size</th>
+                    <th>Modified</th>
+                  </tr>
+                </thead>
+                <tbody id="dataLookupResultsBody"></tbody>
+              </table>
+            </div>
+            <div class="button-group data-lookup-actions">
+              <button onclick="deleteSelectedDataLookupFiles()" id="dataLookupDeleteBtn" class="btn-danger" disabled type="button">
+                Delete Selected
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Settings Tab -->
       <div class="tab-pane" id="settings">
         <div class="page-header">
@@ -467,7 +537,7 @@
             </div>
             <div class="version-display">
               <svg class="version-tag-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2H2v10l9.29 9.29a1 1 0 0 0 1.41 0l6.59-6.59a1 1 0 0 0 0-1.41L12 2Z"/><path d="M7 7h.01"/></svg>
-              <span class="version-number tabular" id="settingsVersion">v2.3.0</span>
+              <span class="version-number tabular" id="settingsVersion">v2.3.2</span>
               <span class="version-badge version-badge-update" id="settingsVersionBadge" style="display:none">Update</span>
               <span class="version-date" id="settingsVersionDate"></span>
             </div>
