@@ -104,15 +104,16 @@ pub fn lookup_data_files(
 
     let filename = expected_filename(lookup_type, &normalized_id)?;
     let jobs = app_data.list_jobs().map_err(|e| e.to_string())?;
+    let maps = app_data.get_config().map_err(|e| e.to_string())?.ark_maps();
 
     let mut matches = Vec::new();
 
     for job in jobs.iter().filter(|job| job.job_type == "ark") {
-        let Some(map) = job.get_map() else {
+        let Some(map) = job.resolve_map(&maps) else {
             continue;
         };
 
-        let saves_dir = derive_saves_dir(&job.root_dir, map.folder_name());
+        let saves_dir = derive_saves_dir(&job.root_dir, &map.folder_name);
         let file_path = saves_dir.join(&filename);
 
         if file_path.is_file() {
@@ -129,15 +130,15 @@ pub fn lookup_data_files(
     Ok(matches)
 }
 
-fn collect_allowed_saves_dirs(jobs: &[Job]) -> Vec<PathBuf> {
+fn collect_allowed_saves_dirs(jobs: &[Job], maps: &[crate::map::MapDefinition]) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
     for job in jobs.iter().filter(|job| job.job_type == "ark") {
-        let Some(map) = job.get_map() else {
+        let Some(map) = job.resolve_map(maps) else {
             continue;
         };
 
-        let saves_dir = derive_saves_dir(&job.root_dir, map.folder_name());
+        let saves_dir = derive_saves_dir(&job.root_dir, &map.folder_name);
         if let Ok(canonical) = saves_dir.canonicalize() {
             dirs.push(canonical);
         }
@@ -159,7 +160,11 @@ fn is_allowed_data_file(path: &Path) -> bool {
 
 pub fn delete_data_files(app_data: &AppData, file_paths: &[String]) -> Vec<DeleteFileResult> {
     let jobs = app_data.list_jobs().unwrap_or_default();
-    let allowed_dirs = collect_allowed_saves_dirs(&jobs);
+    let maps = app_data
+        .get_config()
+        .map(|c| c.ark_maps())
+        .unwrap_or_else(|_| crate::map::default_ark_maps());
+    let allowed_dirs = collect_allowed_saves_dirs(&jobs, &maps);
 
     file_paths
         .iter()

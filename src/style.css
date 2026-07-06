@@ -2193,6 +2193,96 @@ tr.group-header-row td {
   flex-shrink: 0;
 }
 
+.settings-section {
+  margin-top: 16px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  padding: 18px 16px;
+  max-width: 960px;
+}
+
+.settings-section-header {
+  margin-bottom: 14px;
+}
+
+.maps-settings-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.maps-settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.maps-settings-table th,
+.maps-settings-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.maps-settings-table th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--surface-control);
+}
+
+.maps-settings-table tr:last-child td {
+  border-bottom: none;
+}
+
+.maps-settings-table input {
+  width: 100%;
+  min-width: 90px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-control);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font);
+}
+
+.maps-settings-table input:focus {
+  outline: none;
+  border-color: var(--control-focus-border);
+}
+
+.maps-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.settings-message {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.settings-message.is-error {
+  color: var(--red);
+}
+
+.settings-message.is-success {
+  color: var(--green);
+}
+
+.maps-settings-remove {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .tabular { font-variant-numeric: tabular-nums; }
 
 /* ── Admin Portal select (custom dropdown) ── */

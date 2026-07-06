@@ -213,18 +213,6 @@
                 <label>Map</label>
                 <select id="mapSelect">
                   <option value="">Select a map</option>
-                  <option value="TheIsland">The Island</option>
-                  <option value="TheCenter">The Center</option>
-                  <option value="ScorchedEarth">Scorched Earth</option>
-                  <option value="Ragnarok">Ragnarok</option>
-                  <option value="Aberration">Aberration</option>
-                  <option value="Extinction">Extinction</option>
-                  <option value="Valguero">Valguero</option>
-                  <option value="Svartalfheim">Svartalfheim</option>
-                  <option value="Astraeos">Astraeos</option>
-                  <option value="Forglar">Forglar</option>
-                  <option value="Amissa">Amissa</option>
-                  <option value="LostColony">Lost Colony</option>
                 </select>
                 <div class="error-message" id="mapError"></div>
               </div>
@@ -553,6 +541,33 @@
             </div>
           </div>
         </div>
+
+        <div class="settings-section">
+          <div class="settings-section-header">
+            <div class="settings-label">ARK Maps</div>
+            <div class="settings-hint">Maps shown when creating ARK backup jobs. ID is stored on jobs; folder and file names are used for save paths.</div>
+          </div>
+          <div class="maps-settings-table-wrap">
+            <table class="maps-settings-table">
+              <thead>
+                <tr>
+                  <th>Display name</th>
+                  <th>ID</th>
+                  <th>Saves folder</th>
+                  <th>Map file</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="arkMapsSettingsList"></tbody>
+            </table>
+          </div>
+          <div class="maps-settings-actions">
+            <button class="secondary btn-outline btn-sm" id="addArkMapBtn" type="button">Add map</button>
+            <button class="secondary btn-outline btn-sm" id="resetArkMapsBtn" type="button">Reset defaults</button>
+            <button class="btn-accent btn-sm" id="saveArkMapsBtn" type="button">Save maps</button>
+          </div>
+          <div class="settings-message" id="arkMapsSaveMessage" hidden></div>
+        </div>
       </div>
     </div>
     </main>
@@ -684,18 +699,6 @@
             <label>Map</label>
             <select id="wizardMapSelect">
               <option value="">Select a map</option>
-              <option value="TheIsland">The Island</option>
-              <option value="TheCenter">The Center</option>
-              <option value="ScorchedEarth">Scorched Earth</option>
-              <option value="Ragnarok">Ragnarok</option>
-              <option value="Aberration">Aberration</option>
-              <option value="Extinction">Extinction</option>
-              <option value="Valguero">Valguero</option>
-              <option value="Svartalfheim">Svartalfheim</option>
-              <option value="Astraeos">Astraeos</option>
-              <option value="Forglar">Forglar</option>
-              <option value="Amissa">Amissa</option>
-              <option value="LostColony">Lost Colony</option>
             </select>
             <div class="error-message" id="wizardMapError"></div>
           </div>

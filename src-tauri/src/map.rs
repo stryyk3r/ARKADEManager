@@ -1,97 +1,75 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub enum Map {
-    TheIsland,
-    TheCenter,
-    ScorchedEarth,
-    Ragnarok,
-    Aberration,
-    Extinction,
-    Valguero,
-    Svartalfheim,
-    Astraeos,
-    Forglar,
-    Amissa,
-    LostColony,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MapDefinition {
+    /// Stored on jobs (e.g. TheIsland)
+    pub id: String,
+    /// Shown in dropdowns (e.g. The Island)
+    pub display_name: String,
+    /// Saves folder under SavedArks (e.g. TheIsland_WP or Forglar)
+    pub folder_name: String,
+    /// Map .ark file name when including map save (e.g. TheIsland_WP.ark)
+    pub map_file_name: String,
 }
 
-impl Map {
-    pub fn folder_name(&self) -> &'static str {
-        match self {
-            Map::TheIsland => "TheIsland_WP",
-            Map::TheCenter => "TheCenter_WP",
-            Map::ScorchedEarth => "ScorchedEarth_WP",
-            Map::Ragnarok => "Ragnarok_WP",
-            Map::Aberration => "Aberration_WP",
-            Map::Extinction => "Extinction_WP",
-            Map::Valguero => "Valguero_WP",
-            Map::Svartalfheim => "Svartalfheim",  // No _WP suffix (player-created map)
-            Map::Astraeos => "Astraeos_WP",
-            Map::Forglar => "Forglar",  // No _WP suffix (player-created map)
-            Map::Amissa => "Amissa",    // No _WP suffix (player-created map)
-            Map::LostColony => "LostColony_WP",
-        }
-    }
+pub fn default_ark_maps() -> Vec<MapDefinition> {
+    vec![
+        map("TheIsland", "The Island", "TheIsland_WP"),
+        map("TheCenter", "The Center", "TheCenter_WP"),
+        map("ScorchedEarth", "Scorched Earth", "ScorchedEarth_WP"),
+        map("Ragnarok", "Ragnarok", "Ragnarok_WP"),
+        map("Aberration", "Aberration", "Aberration_WP"),
+        map("Extinction", "Extinction", "Extinction_WP"),
+        map("Valguero", "Valguero", "Valguero_WP"),
+        map("Svartalfheim", "Svartalfheim", "Svartalfheim"),
+        map("Astraeos", "Astraeos", "Astraeos_WP"),
+        map("Forglar", "Forglar", "Forglar"),
+        map("Amissa", "Amissa", "Amissa"),
+        map("LostColony", "Lost Colony", "LostColony_WP"),
+    ]
+}
 
-    #[allow(dead_code)]
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            Map::TheIsland => "The Island",
-            Map::TheCenter => "The Center",
-            Map::ScorchedEarth => "Scorched Earth",
-            Map::Ragnarok => "Ragnarok",
-            Map::Aberration => "Aberration",
-            Map::Extinction => "Extinction",
-            Map::Valguero => "Valguero",
-            Map::Svartalfheim => "Svartalfheim",
-            Map::Astraeos => "Astraeos",
-            Map::Forglar => "Forglar",
-            Map::Amissa => "Amissa",
-            Map::LostColony => "Lost Colony",
-        }
-    }
-
-    pub fn base_name(&self) -> &'static str {
-        match self {
-            Map::TheIsland => "TheIsland",
-            Map::TheCenter => "TheCenter",
-            Map::ScorchedEarth => "ScorchedEarth",
-            Map::Ragnarok => "Ragnarok",
-            Map::Aberration => "Aberration",
-            Map::Extinction => "Extinction",
-            Map::Valguero => "Valguero",
-            Map::Svartalfheim => "Svartalfheim",
-            Map::Astraeos => "Astraeos",
-            Map::Forglar => "Forglar",
-            Map::Amissa => "Amissa",
-            Map::LostColony => "LostColony",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "TheIsland" => Some(Map::TheIsland),
-            "TheCenter" => Some(Map::TheCenter),
-            "ScorchedEarth" => Some(Map::ScorchedEarth),
-            "Ragnarok" => Some(Map::Ragnarok),
-            "Aberration" => Some(Map::Aberration),
-            "Extinction" => Some(Map::Extinction),
-            "Valguero" => Some(Map::Valguero),
-            "Svartalfheim" => Some(Map::Svartalfheim),
-            "Astraeos" => Some(Map::Astraeos),
-            "Forglar" => Some(Map::Forglar),
-            "Amissa" => Some(Map::Amissa),
-            "LostColony" => Some(Map::LostColony),
-            _ => None,
-        }
-    }
-    
-    /// Returns the expected map file name
-    /// All maps have _WP suffix in the .ark file name, regardless of folder name
-    pub fn map_file_name(&self) -> String {
-        format!("{}_WP.ark", self.base_name())
+fn map(id: &str, display_name: &str, folder_name: &str) -> MapDefinition {
+    MapDefinition {
+        id: id.to_string(),
+        display_name: display_name.to_string(),
+        folder_name: folder_name.to_string(),
+        map_file_name: format!("{}_WP.ark", id),
     }
 }
 
+pub fn resolve_map<'a>(maps: &'a [MapDefinition], id: &str) -> Option<&'a MapDefinition> {
+    maps.iter().find(|m| m.id == id)
+}
+
+pub fn validate_maps(maps: &[MapDefinition]) -> Result<(), String> {
+    if maps.is_empty() {
+        return Err("At least one map is required".to_string());
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    for map in maps {
+        let id = map.id.trim();
+        let display_name = map.display_name.trim();
+        let folder_name = map.folder_name.trim();
+        let map_file_name = map.map_file_name.trim();
+
+        if id.is_empty() {
+            return Err("Each map needs an ID".to_string());
+        }
+        if display_name.is_empty() {
+            return Err(format!("Map \"{}\" needs a display name", id));
+        }
+        if folder_name.is_empty() {
+            return Err(format!("Map \"{}\" needs a saves folder name", id));
+        }
+        if map_file_name.is_empty() {
+            return Err(format!("Map \"{}\" needs a map file name", id));
+        }
+        if !seen.insert(id.to_string()) {
+            return Err(format!("Duplicate map ID: {}", id));
+        }
+    }
+
+    Ok(())
+}

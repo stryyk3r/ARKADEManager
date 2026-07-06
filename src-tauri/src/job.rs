@@ -1,4 +1,3 @@
-use crate::map::Map;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -102,8 +101,8 @@ impl Job {
         }
     }
 
-    pub fn get_map(&self) -> Option<Map> {
-        Map::from_str(&self.map)
+    pub fn resolve_map<'a>(&self, maps: &'a [crate::map::MapDefinition]) -> Option<&'a crate::map::MapDefinition> {
+        crate::map::resolve_map(maps, &self.map)
     }
 
     pub fn update_next_run(&mut self) {

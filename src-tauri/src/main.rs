@@ -43,6 +43,36 @@ async fn set_theme(
 }
 
 #[tauri::command]
+async fn get_ark_maps(state: tauri::State<'_, AppState>) -> Result<Vec<map::MapDefinition>, String> {
+    let app_data = state.app_data.lock().await;
+    Ok(app_data.get_config().map_err(|e| e.to_string())?.ark_maps())
+}
+
+#[tauri::command]
+async fn save_ark_maps(
+    maps: Vec<map::MapDefinition>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<map::MapDefinition>, String> {
+    map::validate_maps(&maps)?;
+
+    let mut app_data = state.app_data.lock().await;
+    let mut config = app_data.get_config().map_err(|e| e.to_string())?;
+    config.ark_maps = Some(maps);
+    app_data.save_config(&config).map_err(|e| e.to_string())?;
+    Ok(config.ark_maps())
+}
+
+#[tauri::command]
+async fn reset_ark_maps(state: tauri::State<'_, AppState>) -> Result<Vec<map::MapDefinition>, String> {
+    let defaults = map::default_ark_maps();
+    let mut app_data = state.app_data.lock().await;
+    let mut config = app_data.get_config().map_err(|e| e.to_string())?;
+    config.ark_maps = Some(defaults.clone());
+    app_data.save_config(&config).map_err(|e| e.to_string())?;
+    Ok(defaults)
+}
+
+#[tauri::command]
 async fn list_jobs(state: tauri::State<'_, AppState>) -> Result<Vec<job::Job>, String> {
     let app_data = state.app_data.lock().await;
     app_data.list_jobs().map_err(|e| e.to_string())
@@ -53,8 +83,11 @@ async fn add_job(
     job: job::JobInput,
     state: tauri::State<'_, AppState>,
 ) -> Result<job::Job, String> {
-    // Validate job
-    validation::validate_job(&job).map_err(|e| e.to_string())?;
+    let maps = {
+        let app_data = state.app_data.lock().await;
+        app_data.get_config().map_err(|e| e.to_string())?.ark_maps()
+    };
+    validation::validate_job(&job, &maps).map_err(|e| e.to_string())?;
 
     let mut app_data = state.app_data.lock().await;
     let new_job = app_data.add_job(job).map_err(|e| e.to_string())?;
@@ -71,8 +104,11 @@ async fn update_job(
     job: job::JobInput,
     state: tauri::State<'_, AppState>,
 ) -> Result<job::Job, String> {
-    // Validate job
-    validation::validate_job(&job).map_err(|e| e.to_string())?;
+    let maps = {
+        let app_data = state.app_data.lock().await;
+        app_data.get_config().map_err(|e| e.to_string())?.ark_maps()
+    };
+    validation::validate_job(&job, &maps).map_err(|e| e.to_string())?;
 
     let mut app_data = state.app_data.lock().await;
     let updated_job = app_data.update_job(job).map_err(|e| e.to_string())?;
@@ -802,6 +838,9 @@ fn main() {
             toggle_plugin_for_all_servers,
             get_config,
             set_theme,
+            get_ark_maps,
+            save_ark_maps,
+            reset_ark_maps,
             list_jobs,
             add_job,
             update_job,

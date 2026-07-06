@@ -1,9 +1,9 @@
 use crate::job::JobInput;
-use crate::map::Map;
+use crate::map::{self, MapDefinition};
 use anyhow::{Context, Result};
 use std::path::Path;
 
-pub fn validate_job(job: &JobInput) -> Result<()> {
+pub fn validate_job(job: &JobInput, maps: &[MapDefinition]) -> Result<()> {
     // Validate root_dir exists
     if !Path::new(&job.root_dir).exists() {
         anyhow::bail!("Server root directory does not exist: {}", job.root_dir);
@@ -47,12 +47,11 @@ pub fn validate_job(job: &JobInput) -> Result<()> {
     }
 
     // ARK: validate map and derived paths
-    Map::from_str(&job.map)
+    let map = map::resolve_map(maps, &job.map)
         .with_context(|| format!("Invalid map: {}", job.map))?;
 
-    let map = Map::from_str(&job.map).unwrap();
     let config_dir = derive_config_dir(&job.root_dir);
-    let saves_dir = derive_saves_dir(&job.root_dir, map.folder_name());
+    let saves_dir = derive_saves_dir(&job.root_dir, &map.folder_name);
     let plugins_dir = derive_plugins_dir(&job.root_dir);
 
     // If including server files, config dir must exist and contain required files

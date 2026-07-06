@@ -13,6 +13,160 @@ let allJobs = [];
 let currentRunningJob = null;
 let dataLookupResults = [];
 const GITHUB_RELEASES_URL = 'https://github.com/stryyk3r/ARKADEManager/releases';
+let editableArkMaps = [];
+
+function populateMapSelect(selectEl, maps, selectedValue = '') {
+  if (!selectEl) return;
+  const current = selectedValue || selectEl.value;
+  selectEl.innerHTML = '<option value="">Select a map</option>';
+  maps.forEach(map => {
+    const opt = document.createElement('option');
+    opt.value = map.id;
+    opt.textContent = map.display_name;
+    selectEl.appendChild(opt);
+  });
+  if (current && [...selectEl.options].some(opt => opt.value === current)) {
+    selectEl.value = current;
+  }
+}
+
+async function refreshMapSelects(preserveValues = true) {
+  try {
+    const maps = await invoke('get_ark_maps');
+    populateMapSelect(
+      document.getElementById('mapSelect'),
+      maps,
+      preserveValues ? document.getElementById('mapSelect')?.value : ''
+    );
+    populateMapSelect(
+      document.getElementById('wizardMapSelect'),
+      maps,
+      preserveValues ? document.getElementById('wizardMapSelect')?.value : ''
+    );
+    return maps;
+  } catch (e) {
+    console.error('Failed to load ARK maps:', e);
+    return [];
+  }
+}
+
+function showArkMapsMessage(text, type = 'info') {
+  const el = document.getElementById('arkMapsSaveMessage');
+  if (!el) return;
+  el.hidden = !text;
+  el.textContent = text || '';
+  el.classList.remove('is-error', 'is-success');
+  if (type === 'error') el.classList.add('is-error');
+  if (type === 'success') el.classList.add('is-success');
+}
+
+function renderArkMapsSettingsList(maps) {
+  editableArkMaps = maps.map(map => ({ ...map }));
+  const tbody = document.getElementById('arkMapsSettingsList');
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+  editableArkMaps.forEach((map, index) => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td><input type="text" data-field="display_name" data-index="${index}" value="${escapeHtmlAttr(map.display_name)}"></td>
+      <td><input type="text" data-field="id" data-index="${index}" value="${escapeHtmlAttr(map.id)}"></td>
+      <td><input type="text" data-field="folder_name" data-index="${index}" value="${escapeHtmlAttr(map.folder_name)}"></td>
+      <td><input type="text" data-field="map_file_name" data-index="${index}" value="${escapeHtmlAttr(map.map_file_name)}"></td>
+      <td><button type="button" class="secondary btn-outline btn-sm maps-settings-remove" data-remove-index="${index}">Remove</button></td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+function escapeHtmlAttr(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+
+function collectArkMapsFromSettings() {
+  const tbody = document.getElementById('arkMapsSettingsList');
+  if (!tbody) return [];
+
+  return [...tbody.querySelectorAll('tr')].map(row => {
+    const get = (field) => row.querySelector(`input[data-field="${field}"]`)?.value.trim() || '';
+    return {
+      id: get('id'),
+      display_name: get('display_name'),
+      folder_name: get('folder_name'),
+      map_file_name: get('map_file_name'),
+    };
+  });
+}
+
+async function loadArkMapsSettings() {
+  try {
+    const maps = await invoke('get_ark_maps');
+    renderArkMapsSettingsList(maps);
+    showArkMapsMessage('');
+  } catch (e) {
+    console.error('Failed to load ARK map settings:', e);
+    showArkMapsMessage('Failed to load maps.', 'error');
+  }
+}
+
+function setupArkMapsSettings() {
+  const tbody = document.getElementById('arkMapsSettingsList');
+  tbody?.addEventListener('input', (e) => {
+    const input = e.target;
+    if (!(input instanceof HTMLInputElement) || !input.dataset.field) return;
+    const index = Number(input.dataset.index);
+    if (!Number.isInteger(index) || !editableArkMaps[index]) return;
+    editableArkMaps[index][input.dataset.field] = input.value;
+  });
+
+  tbody?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-index]');
+    if (!btn) return;
+    const index = Number(btn.dataset.removeIndex);
+    editableArkMaps.splice(index, 1);
+    renderArkMapsSettingsList(editableArkMaps);
+  });
+
+  document.getElementById('addArkMapBtn')?.addEventListener('click', () => {
+    editableArkMaps.push({
+      id: '',
+      display_name: '',
+      folder_name: '',
+      map_file_name: '',
+    });
+    renderArkMapsSettingsList(editableArkMaps);
+  });
+
+  document.getElementById('resetArkMapsBtn')?.addEventListener('click', async () => {
+    try {
+      const maps = await invoke('reset_ark_maps');
+      renderArkMapsSettingsList(maps);
+      await refreshMapSelects(true);
+      showArkMapsMessage('Restored default map list.', 'success');
+    } catch (e) {
+      console.error('Failed to reset ARK maps:', e);
+      showArkMapsMessage(String(e), 'error');
+    }
+  });
+
+  document.getElementById('saveArkMapsBtn')?.addEventListener('click', async () => {
+    try {
+      const maps = collectArkMapsFromSettings();
+      const saved = await invoke('save_ark_maps', { maps });
+      renderArkMapsSettingsList(saved);
+      await refreshMapSelects(true);
+      showArkMapsMessage('Maps saved.', 'success');
+    } catch (e) {
+      console.error('Failed to save ARK maps:', e);
+      showArkMapsMessage(String(e), 'error');
+    }
+  });
+
+  loadArkMapsSettings();
+}
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
@@ -121,12 +275,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   };
   document.getElementById('settingsReleaseNotesBtn')?.addEventListener('click', openReleaseNotes);
+
+  await refreshMapSelects(false);
+  setupArkMapsSettings();
   
   // Initialize Plugin Toggle tab
   await loadPluginToggleServers();
   initAdminSelect(document.getElementById('pluginToggleServerSelect'));
   initAdminSelect(document.getElementById('intervalUnit'));
   initAdminSelect(document.getElementById('wizardIntervalUnit'));
+  initAdminSelect(document.getElementById('mapSelect'));
+  initAdminSelect(document.getElementById('wizardMapSelect'));
 
   const pluginToggleServerSelect = document.getElementById('pluginToggleServerSelect');
   if (pluginToggleServerSelect) {

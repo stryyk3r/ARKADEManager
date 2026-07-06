@@ -941,12 +941,13 @@ fn rename_temp_to_backup(temp_path: &Path, backup_path: &Path) -> Result<()> {
 pub async fn create_backup(job: &Job, app_data: &AppData) -> Result<u64> {
     log::info!("Starting backup for job: {}", job.name);
 
+    let maps = app_data.get_config()?.ark_maps();
     let map = job
-        .get_map()
+        .resolve_map(&maps)
         .ok_or_else(|| anyhow::anyhow!("Invalid map: {}", job.map))?;
 
     // Derive paths
-    let saves_dir = validation::derive_saves_dir(&job.root_dir, map.folder_name());
+    let saves_dir = validation::derive_saves_dir(&job.root_dir, &map.folder_name);
     let config_dir = validation::derive_config_dir(&job.root_dir);
     let plugins_dir = validation::derive_plugins_dir(&job.root_dir);
 
@@ -1030,7 +1031,7 @@ async fn attempt_backup(
     config_dir: &Path,
     plugins_dir: &Path,
     job: &Job,
-    map: &crate::map::Map,
+    map: &crate::map::MapDefinition,
 ) -> Result<u64> {
     // Create ZIP file
     let file = fs::File::create(temp_path)
@@ -1090,7 +1091,7 @@ fn add_saves_to_zip(
     saves_dir: &Path,
     include_saves: bool,
     include_map: bool,
-    map: &crate::map::Map,
+    map: &crate::map::MapDefinition,
     options: &FileOptions,
 ) -> Result<()> {
     if !saves_dir.exists() {
@@ -1098,7 +1099,7 @@ fn add_saves_to_zip(
     }
 
     // Expected map file name: all maps have _WP suffix in the .ark file name
-    let expected_map_file = map.map_file_name();
+    let expected_map_file = &map.map_file_name;
 
     for entry in WalkDir::new(saves_dir).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
