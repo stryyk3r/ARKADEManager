@@ -7,6 +7,7 @@ mod config;
 mod data_lookup;
 mod job;
 mod map;
+mod palworld_rcon;
 mod plugins;
 mod scheduler;
 mod validation;

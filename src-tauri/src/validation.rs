@@ -1,7 +1,7 @@
 use crate::job::JobInput;
 use crate::map::{self, MapDefinition};
 use anyhow::{Context, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn validate_job(job: &JobInput, maps: &[MapDefinition]) -> Result<()> {
     // Validate root_dir exists
@@ -30,18 +30,35 @@ pub fn validate_job(job: &JobInput, maps: &[MapDefinition]) -> Result<()> {
 
     if job.job_type == "minecraft" {
         validate_interval_retention(job)?;
-        // Minecraft with RCON: require host, port, password for save-off/save-on flow
-        let has_host = job.rcon_host.as_ref().map(|h| !h.trim().is_empty()).unwrap_or(false);
-        let has_port = job.rcon_port.map(|p| p > 0).unwrap_or(false);
-        let has_password = job.rcon_password.as_ref().map(|p| !p.is_empty()).unwrap_or(false);
-        if !has_host {
-            anyhow::bail!("Minecraft backup requires RCON host (IP or hostname)");
+        validate_rcon_fields(job)?;
+        return Ok(());
+    }
+
+    if job.job_type == "palworld" {
+        validate_interval_retention(job)?;
+        validate_rcon_fields(job)?;
+
+        let config_dir = derive_palworld_config_dir(&job.root_dir);
+        let settings_ini = config_dir.join("PalWorldSettings.ini");
+        if !settings_ini.exists() {
+            anyhow::bail!(
+                "PalWorldSettings.ini not found in: {}",
+                config_dir.display()
+            );
         }
-        if !has_port {
-            anyhow::bail!("Minecraft backup requires RCON port (e.g. 25575)");
+
+        let world_dir = discover_palworld_world_dir(&job.root_dir)?;
+        if !world_dir.join("Players").exists() {
+            anyhow::bail!(
+                "Players folder not found in Palworld world directory: {}",
+                world_dir.display()
+            );
         }
-        if !has_password {
-            anyhow::bail!("Minecraft backup requires RCON password");
+        if !world_dir.join("Level.sav").exists() {
+            anyhow::bail!(
+                "Level.sav not found in Palworld world directory: {}",
+                world_dir.display()
+            );
         }
         return Ok(());
     }
@@ -94,6 +111,30 @@ pub fn validate_job(job: &JobInput, maps: &[MapDefinition]) -> Result<()> {
     Ok(())
 }
 
+fn validate_rcon_fields(job: &JobInput) -> Result<()> {
+    let has_host = job
+        .rcon_host
+        .as_ref()
+        .map(|h| !h.trim().is_empty())
+        .unwrap_or(false);
+    let has_port = job.rcon_port.map(|p| p > 0).unwrap_or(false);
+    let has_password = job
+        .rcon_password
+        .as_ref()
+        .map(|p| !p.is_empty())
+        .unwrap_or(false);
+    if !has_host {
+        anyhow::bail!("Backup requires RCON host (IP or hostname)");
+    }
+    if !has_port {
+        anyhow::bail!("Backup requires RCON port (e.g. 25575)");
+    }
+    if !has_password {
+        anyhow::bail!("Backup requires RCON password");
+    }
+    Ok(())
+}
+
 fn validate_interval_retention(job: &JobInput) -> Result<()> {
     if job.interval_value == 0 {
         anyhow::bail!("Interval value must be greater than 0");
@@ -130,6 +171,65 @@ pub fn derive_plugins_dir(root_dir: &str) -> std::path::PathBuf {
         .join("Win64")
         .join("ArkApi")
         .join("Plugins")
+}
+
+pub fn derive_palworld_config_dir(root_dir: &str) -> PathBuf {
+    Path::new(root_dir)
+        .join("Pal")
+        .join("Saved")
+        .join("Config")
+        .join("WindowsServer")
+}
+
+pub fn derive_palworld_savegames_dir(root_dir: &str) -> PathBuf {
+    Path::new(root_dir)
+        .join("Pal")
+        .join("Saved")
+        .join("SaveGames")
+        .join("0")
+}
+
+/// Find the single world directory under SaveGames/0 that contains Level.sav.
+pub fn discover_palworld_world_dir(root_dir: &str) -> Result<PathBuf> {
+    let savegames = derive_palworld_savegames_dir(root_dir);
+    if !savegames.exists() {
+        anyhow::bail!(
+            "Palworld savegames directory does not exist: {}",
+            savegames.display()
+        );
+    }
+
+    let mut matches = Vec::new();
+    for entry in std::fs::read_dir(&savegames)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() && path.join("Level.sav").exists() {
+            matches.push(path);
+        }
+    }
+
+    match matches.len() {
+        0 => anyhow::bail!(
+            "No Palworld world directory found containing Level.sav under {}",
+            savegames.display()
+        ),
+        1 => Ok(matches.remove(0)),
+        n => {
+            let names: Vec<String> = matches
+                .iter()
+                .filter_map(|p| {
+                    p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|s| s.to_string())
+                })
+                .collect();
+            anyhow::bail!(
+                "Multiple Palworld world directories found ({}): {}. Ensure only one world exists.",
+                n,
+                names.join(", ")
+            )
+        }
+    }
 }
 
 #[cfg(test)]

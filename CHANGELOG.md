@@ -4,6 +4,14 @@ All notable changes to ARKADE Manager are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.4.0] - 2026-07-13
+
+### Added
+
+- **Palworld backup jobs** — new `palworld` job type with required RCON `Save` before backup, selective ZIP of `Players/`, `Level.sav`, `LevelMeta.sav`, and `PalWorldSettings.ini`, scheduler integration, monthly FOTM routing, and wizard/UI support.
+
+---
+
 ## [2.3.2] - 2026-07-02
 
 ### Added
@@ -94,6 +102,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Application migrated to Tauri v2 (Rust backend + web frontend).
 - ARK ASA backup jobs, scheduling, monthly archive, logs.
 
+[2.4.0]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.0
 [2.3.2]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.3.2
 [2.3.0]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.3.0
 [2.2.2]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.2.2

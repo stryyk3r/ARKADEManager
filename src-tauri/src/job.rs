@@ -14,7 +14,7 @@ fn default_monthly_cluster() -> String {
 pub struct Job {
     pub id: String,
     #[serde(default = "default_job_type")]
-    pub job_type: String, // "ark" | "minecraft"
+    pub job_type: String, // "ark" | "minecraft" | "palworld"
     #[serde(default = "default_monthly_cluster")]
     pub monthly_cluster: String, // "ASA Legacy" | "ASE Legacy" | "ASA Omega" | "Minecraft" | "Palworld"
     pub name: String,
@@ -45,7 +45,7 @@ pub struct Job {
 pub struct JobInput {
     pub id: Option<String>,
     #[serde(default = "default_job_type")]
-    pub job_type: String, // "ark" | "minecraft"
+    pub job_type: String, // "ark" | "minecraft" | "palworld"
     #[serde(default = "default_monthly_cluster")]
     pub monthly_cluster: String,
     pub name: String,

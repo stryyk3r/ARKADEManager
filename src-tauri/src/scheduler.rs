@@ -175,10 +175,17 @@ impl Scheduler {
                     }
                 };
 
-                let backup_result = if job_clone.job_type == "minecraft" {
-                    backup::create_minecraft_backup(&job_clone, &app_data, Some(app_handle_clone.clone())).await
-                } else {
-                    backup::create_backup(&job_clone, &app_data).await
+                let backup_result = match job_clone.job_type.as_str() {
+                    "minecraft" => {
+                        backup::create_minecraft_backup(
+                            &job_clone,
+                            &app_data,
+                            Some(app_handle_clone.clone()),
+                        )
+                        .await
+                    }
+                    "palworld" => backup::create_palworld_backup(&job_clone, &app_data).await,
+                    _ => backup::create_backup(&job_clone, &app_data).await,
                 };
 
                 match backup_result {

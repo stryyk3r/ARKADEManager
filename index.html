@@ -14,7 +14,7 @@
         </div>
         <div class="brand-text">
           <span class="brand-name">ARKADE MANAGER</span>
-          <span class="brand-version tabular" id="sidebarVersion">v2.3.2</span>
+          <span class="brand-version tabular" id="sidebarVersion">v2.4.0</span>
         </div>
       </div>
 
@@ -130,7 +130,7 @@
         <span id="queueSize" style="display:none">0</span>
         <span id="currentJob" style="display:none">None</span>
         <span id="lastTick" style="display:none">Never</span>
-        <span id="versionBox" style="display:none">v2.3.2</span>
+        <span id="versionBox" style="display:none">v2.4.0</span>
         <span id="versionStatusBadge" style="display:none"></span>
         <span id="versionDate" style="display:none"></span>
         <button id="updateBox" type="button" style="display:none"></button>
@@ -166,6 +166,7 @@
             <option value="all">All Types</option>
             <option value="ark">ARK</option>
             <option value="minecraft">Minecraft</option>
+            <option value="palworld">Palworld</option>
           </select>
           <button onclick="showMonthlyStatus()" class="secondary btn-sm" type="button">Monthly Status</button>
         </div>
@@ -325,6 +326,62 @@
               </div>
             </div>
             <p class="step-description">Retention: last 48 hours of backups plus the first backup of each day for 30 days.</p>
+          </div>
+          <div id="jobFormPalworldFields" class="job-form-palworld-fields" style="display: none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Job Name</label>
+                <input type="text" id="jobNamePalworld" placeholder="Enter job name">
+                <div class="error-message" id="jobNamePalworldError"></div>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Monthly Cluster</label>
+                <select id="monthlyClusterPalworld">
+                  <option value="">Select a cluster</option>
+                  <option value="ASA Legacy">ASA Legacy</option>
+                  <option value="ASE Legacy">ASE Legacy</option>
+                  <option value="ASA Omega">ASA Omega</option>
+                  <option value="Minecraft">Minecraft</option>
+                  <option value="Palworld" selected>Palworld</option>
+                </select>
+                <div class="error-message" id="monthlyClusterPalworldError"></div>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>RCON Host</label>
+                <input type="text" id="rconHostPalworld" placeholder="e.g. 127.0.0.1">
+              </div>
+              <div class="form-group">
+                <label>RCON Port</label>
+                <input type="number" id="rconPortPalworld" placeholder="25575" min="1" max="65535" value="25575">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>RCON Password</label>
+                <input type="password" id="rconPasswordPalworld" placeholder="RCON password">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Interval</label>
+                <div class="interval-input">
+                  <input type="number" id="intervalValuePalworld" min="1" value="1">
+                  <select id="intervalUnitPalworld">
+                    <option value="minutes">Minutes</option>
+                    <option value="hours">Hours</option>
+                    <option value="days">Days</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Retention (days)</label>
+                <input type="number" id="retentionDaysPalworld" min="1" value="7">
+              </div>
+            </div>
           </div>
           <div class="form-group">
             <div class="checkbox-item">
@@ -525,7 +582,7 @@
             </div>
             <div class="version-display">
               <svg class="version-tag-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2H2v10l9.29 9.29a1 1 0 0 0 1.41 0l6.59-6.59a1 1 0 0 0 0-1.41L12 2Z"/><path d="M7 7h.01"/></svg>
-              <span class="version-number tabular" id="settingsVersion">v2.3.2</span>
+              <span class="version-number tabular" id="settingsVersion">v2.4.0</span>
               <span class="version-badge version-badge-update" id="settingsVersionBadge" style="display:none">Update</span>
               <span class="version-date" id="settingsVersionDate"></span>
             </div>
@@ -606,6 +663,11 @@
               <input type="radio" name="wizardBackupType" value="minecraft" id="wizardBackupTypeMinecraft">
               <strong>Minecraft</strong>
               <div class="step-description">Back up your Minecraft server</div>
+            </label>
+            <label class="backup-type-option">
+              <input type="radio" name="wizardBackupType" value="palworld" id="wizardBackupTypePalworld">
+              <strong>Palworld</strong>
+              <div class="step-description">Back up your Palworld server</div>
             </label>
           </div>
           <div class="error-message" id="wizardBackupTypeError"></div>
@@ -688,6 +750,66 @@
             <div class="checkbox-item">
               <input type="checkbox" id="wizardMinecraftEnabled">
               <label for="wizardMinecraftEnabled" style="margin: 0;">Enabled</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="wizard-step" id="wizardStepPalworldConfig">
+          <div class="step-title">Step 4: Job Configuration</div>
+          <div class="step-description">Configure your Palworld backup job.</div>
+          <div class="form-group">
+            <label>Job Name</label>
+            <input type="text" id="wizardPalworldJobName" placeholder="Enter job name">
+            <div class="error-message" id="wizardPalworldJobNameError"></div>
+          </div>
+          <div class="form-group">
+            <label>Monthly Cluster</label>
+            <select id="wizardMonthlyClusterPalworld">
+              <option value="">Select a cluster</option>
+              <option value="ASA Legacy">ASA Legacy</option>
+              <option value="ASE Legacy">ASE Legacy</option>
+              <option value="ASA Omega">ASA Omega</option>
+              <option value="Minecraft">Minecraft</option>
+              <option value="Palworld" selected>Palworld</option>
+            </select>
+            <div class="error-message" id="wizardMonthlyClusterPalworldError"></div>
+          </div>
+          <div class="form-group">
+            <label>RCON Host</label>
+            <input type="text" id="wizardPalworldRconHost" placeholder="e.g. 127.0.0.1">
+            <div class="error-message" id="wizardPalworldRconHostError"></div>
+          </div>
+          <div class="form-group">
+            <label>RCON Port</label>
+            <input type="number" id="wizardPalworldRconPort" placeholder="25575" min="1" max="65535" value="25575">
+            <div class="error-message" id="wizardPalworldRconPortError"></div>
+          </div>
+          <div class="form-group">
+            <label>RCON Password</label>
+            <input type="password" id="wizardPalworldRconPassword" placeholder="RCON password">
+            <div class="error-message" id="wizardPalworldRconPasswordError"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Interval</label>
+              <div class="interval-input">
+                <input type="number" id="wizardPalworldIntervalValue" min="1" value="1">
+                <select id="wizardPalworldIntervalUnit">
+                  <option value="minutes">Minutes</option>
+                  <option value="hours">Hours</option>
+                  <option value="days">Days</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Retention (days)</label>
+              <input type="number" id="wizardPalworldRetentionDays" min="1" value="7">
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="checkbox-item">
+              <input type="checkbox" id="wizardPalworldEnabled">
+              <label for="wizardPalworldEnabled" style="margin: 0;">Enabled</label>
             </div>
           </div>
         </div>
