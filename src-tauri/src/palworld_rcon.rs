@@ -1,60 +1,94 @@
 use anyhow::{Context, Result};
-use std::io::{Read, Write};
-use std::net::TcpStream;
-use std::time::Duration;
+use mc_rcon::RconClient;
+use std::io;
+use std::net::ToSocketAddrs;
 
-const READ_TIMEOUT_SECS: u64 = 8;
-const WRITE_TIMEOUT_SECS: u64 = 8;
-
-/// Build a Palworld RCON packet: size (LE), id (LE), type (LE), body (ASCII), 2-byte null terminator.
-fn create_packet(packet_type: i32, id: i32, body: &str) -> Vec<u8> {
-    let body_bytes = body.as_bytes();
-    let size = body_bytes.len() + 14;
-    let mut buffer = vec![0u8; size];
-
-    let size_field = (size - 4) as i32;
-    buffer[0..4].copy_from_slice(&size_field.to_le_bytes());
-    buffer[4..8].copy_from_slice(&id.to_le_bytes());
-    buffer[8..12].copy_from_slice(&packet_type.to_le_bytes());
-    buffer[12..12 + body_bytes.len()].copy_from_slice(body_bytes);
-    buffer
+fn is_loopback_host(host: &str) -> bool {
+    let h = host.trim().to_lowercase();
+    h == "127.0.0.1" || h == "localhost" || h == "::1"
 }
 
-fn read_response(stream: &mut TcpStream) -> Result<Vec<u8>> {
-    let mut buf = [0u8; 8192];
-    let n = stream
-        .read(&mut buf)
-        .context("Failed to read Palworld RCON response")?;
-    Ok(buf[..n].to_vec())
+fn format_connect_error(addr: &str, err: &io::Error) -> String {
+    let detail = match err.kind() {
+        io::ErrorKind::ConnectionRefused => {
+            "Connection refused. Confirm RCONEnabled=True in PalWorldSettings.ini, the server is running, and the RCON port is open in the firewall."
+        }
+        io::ErrorKind::TimedOut => {
+            "Connection timed out. Check that this machine can reach the RCON port (firewall/security group)."
+        }
+        io::ErrorKind::HostUnreachable | io::ErrorKind::NetworkUnreachable => {
+            "Network unreachable. Verify the RCON host address is correct."
+        }
+        _ => "Check the RCON host, port, and network path.",
+    };
+
+    format!(
+        "Palworld RCON connect failed: {} ({detail}). {hint} Use the AdminPassword from PalWorldSettings.ini as the RCON password. If ARKADE Manager runs on the same machine as the server, try 127.0.0.1 instead of the public IP.",
+        addr,
+        detail = err,
+        hint = detail
+    )
 }
 
-/// Authenticate and send a Palworld RCON command.
+fn connect_rcon(host: &str, port: u16) -> Result<RconClient> {
+    let host = host.trim();
+    let primary_addr = format!("{host}:{port}");
+
+    match RconClient::connect(&primary_addr) {
+        Ok(client) => return Ok(client),
+        Err(primary_err) => {
+            if is_loopback_host(host) {
+                return Err(anyhow::anyhow!(format_connect_error(&primary_addr, &primary_err)));
+            }
+
+            let fallback_addr = format!("127.0.0.1:{port}");
+            log::warn!(
+                "Palworld RCON connect to {} failed ({}); retrying {}",
+                primary_addr,
+                primary_err,
+                fallback_addr
+            );
+
+            match RconClient::connect(&fallback_addr) {
+                Ok(client) => {
+                    log::info!(
+                        "Palworld RCON connected via {} (configured host {} was unreachable from this machine)",
+                        fallback_addr,
+                        host
+                    );
+                    Ok(client)
+                }
+                Err(_) => Err(anyhow::anyhow!(format_connect_error(
+                    &primary_addr,
+                    &primary_err
+                ))),
+            }
+        }
+    }
+}
+
+/// Authenticate and send a Palworld RCON command using Source RCON (same protocol as Minecraft).
 pub fn send_command(host: &str, port: u16, password: &str, command: &str) -> Result<String> {
     let addr = format!("{}:{}", host.trim(), port);
-    let mut stream = TcpStream::connect(&addr)
-        .with_context(|| format!("Palworld RCON connect failed: {}", addr))?;
+    // Validate address resolves early for clearer errors.
+    addr.to_socket_addrs()
+        .with_context(|| format!("Invalid Palworld RCON address: {addr}"))?
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Could not resolve Palworld RCON address: {addr}"))?;
 
-    stream
-        .set_read_timeout(Some(Duration::from_secs(READ_TIMEOUT_SECS)))
-        .context("Failed to set read timeout")?;
-    stream
-        .set_write_timeout(Some(Duration::from_secs(WRITE_TIMEOUT_SECS)))
-        .context("Failed to set write timeout")?;
+    let client = connect_rcon(host, port)?;
 
-    let auth_packet = create_packet(3, 1, password);
-    stream
-        .write_all(&auth_packet)
-        .context("Failed to send Palworld RCON auth packet")?;
+    client.log_in(password).map_err(|e| {
+        anyhow::anyhow!(
+            "Palworld RCON authentication failed for {}: {}. Verify the RCON password matches AdminPassword in PalWorldSettings.ini.",
+            addr,
+            e
+        )
+    })?;
 
-    let _ = read_response(&mut stream).context("Failed to read Palworld RCON auth response")?;
-
-    let cmd_packet = create_packet(2, 2, command);
-    stream
-        .write_all(&cmd_packet)
-        .context("Failed to send Palworld RCON command packet")?;
-
-    let response = read_response(&mut stream).context("Failed to read Palworld RCON command response")?;
-    Ok(String::from_utf8_lossy(&response).to_string())
+    client
+        .send_command(command)
+        .map_err(|e| anyhow::anyhow!("Palworld RCON command '{command}' failed on {addr}: {e}"))
 }
 
 /// Send the Save command to flush world state to disk before backup.
@@ -67,4 +101,16 @@ pub fn send_save(host: &str, port: u16, password: &str) -> Result<()> {
     let response = send_command(host, port, password, "Save")?;
     log::info!("Palworld RCON Save response: {}", response.trim());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loopback_hosts_are_detected() {
+        assert!(is_loopback_host("127.0.0.1"));
+        assert!(is_loopback_host("localhost"));
+        assert!(!is_loopback_host("213.239.211.202"));
+    }
 }

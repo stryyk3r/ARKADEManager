@@ -31,6 +31,7 @@ pub fn validate_job(job: &JobInput, maps: &[MapDefinition]) -> Result<()> {
     if job.job_type == "minecraft" {
         validate_interval_retention(job)?;
         validate_rcon_fields(job)?;
+        resolve_minecraft_backup_dirs(&job.root_dir)?;
         return Ok(());
     }
 
@@ -173,6 +174,38 @@ pub fn derive_plugins_dir(root_dir: &str) -> std::path::PathBuf {
         .join("Plugins")
 }
 
+/// Standard Minecraft server directories always included in backups.
+pub const MINECRAFT_REQUIRED_BACKUP_DIRS: &[&str] = &["world", "config"];
+
+/// Optional Minecraft directories included only when present (e.g. Cobblemon Discord integration).
+pub const MINECRAFT_OPTIONAL_BACKUP_DIRS: &[&str] = &["DiscordIntegration-Data"];
+
+/// Resolve absolute paths for Minecraft backup directories under the server root.
+pub fn resolve_minecraft_backup_dirs(root_dir: &str) -> Result<Vec<PathBuf>> {
+    let root = Path::new(root_dir);
+    let mut dirs = Vec::new();
+
+    for name in MINECRAFT_REQUIRED_BACKUP_DIRS {
+        let path = root.join(name);
+        if !path.is_dir() {
+            anyhow::bail!(
+                "Minecraft backup requires directory: {}",
+                path.display()
+            );
+        }
+        dirs.push(path);
+    }
+
+    for name in MINECRAFT_OPTIONAL_BACKUP_DIRS {
+        let path = root.join(name);
+        if path.is_dir() {
+            dirs.push(path);
+        }
+    }
+
+    Ok(dirs)
+}
+
 pub fn derive_palworld_config_dir(root_dir: &str) -> PathBuf {
     Path::new(root_dir)
         .join("Pal")
@@ -235,6 +268,7 @@ pub fn discover_palworld_world_dir(root_dir: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn test_derive_paths() {
@@ -261,6 +295,42 @@ mod tests {
             let saves = derive_saves_dir(root, map);
             assert!(saves.to_string_lossy().ends_with(map));
         }
+    }
+
+    #[test]
+    fn test_resolve_minecraft_backup_dirs_required_only() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("world")).unwrap();
+        fs::create_dir_all(root.join("config")).unwrap();
+
+        let dirs = resolve_minecraft_backup_dirs(root.to_str().unwrap()).unwrap();
+        assert_eq!(dirs.len(), 2);
+        assert!(dirs.iter().any(|p| p.ends_with("world")));
+        assert!(dirs.iter().any(|p| p.ends_with("config")));
+    }
+
+    #[test]
+    fn test_resolve_minecraft_backup_dirs_includes_discord_when_present() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("world")).unwrap();
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::create_dir_all(root.join("DiscordIntegration-Data")).unwrap();
+
+        let dirs = resolve_minecraft_backup_dirs(root.to_str().unwrap()).unwrap();
+        assert_eq!(dirs.len(), 3);
+        assert!(dirs.iter().any(|p| p.ends_with("DiscordIntegration-Data")));
+    }
+
+    #[test]
+    fn test_resolve_minecraft_backup_dirs_missing_world_errors() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("config")).unwrap();
+
+        let err = resolve_minecraft_backup_dirs(root.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("world"));
     }
 }
 

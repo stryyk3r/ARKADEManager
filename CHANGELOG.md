@@ -4,6 +4,23 @@ All notable changes to ARKADE Manager are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.4.2] - 2026-07-13
+
+### Fixed
+
+- **Palworld RCON** — use Source RCON (same protocol as Minecraft) instead of a custom packet format; retry `127.0.0.1` when the configured public IP is unreachable from the same machine; clearer connect vs auth error messages.
+- **Backup wizard** — Step 2 description and title now update for Minecraft and Palworld instead of always showing ARK: Survival Ascended.
+
+---
+
+## [2.4.1] - 2026-07-13
+
+### Changed
+
+- **Minecraft backups** — archive only `world/`, `config/`, and `DiscordIntegration-Data/` (when present) instead of the full server root, reducing backup size and duration for modded servers like Cobblemon.
+
+---
+
 ## [2.4.0] - 2026-07-13
 
 ### Added
@@ -102,6 +119,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Application migrated to Tauri v2 (Rust backend + web frontend).
 - ARK ASA backup jobs, scheduling, monthly archive, logs.
 
+[2.4.2]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.2
+[2.4.1]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.1
 [2.4.0]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.0
 [2.3.2]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.3.2
 [2.3.0]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.3.0

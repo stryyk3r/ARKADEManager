@@ -277,37 +277,65 @@ fn run_rcon_commands(host: String, port: u16, password: String, commands: Vec<&'
     Ok(())
 }
 
-/// Copy server root to staging directory with same exclusions as backup: .jar, orebfuscator_cache, session.lock.
-fn copy_root_to_staging(root_path: &Path, staging_path: &Path) -> Result<()> {
-    log::info!("Copying {} -> {}", root_path.display(), staging_path.display());
-    fs::create_dir_all(staging_path).with_context(|| format!("Failed to create staging dir: {}", staging_path.display()))?;
+/// Returns true if a file should be skipped when copying/archiving Minecraft backup paths.
+fn should_skip_minecraft_backup_file(path: &Path) -> bool {
+    if path.components().any(|c| c.as_os_str() == OsStr::new("orebfuscator_cache")) {
+        return true;
+    }
+    if path.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("jar")) {
+        return true;
+    }
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map_or(false, |n| n.eq_ignore_ascii_case("session.lock"))
+}
+
+/// Copy only Minecraft backup directories (world, config, optional DiscordIntegration-Data) to staging.
+fn copy_minecraft_paths_to_staging(
+    root_path: &Path,
+    staging_path: &Path,
+    backup_dirs: &[PathBuf],
+) -> Result<()> {
+    log::info!(
+        "Copying Minecraft backup paths from {} -> {}",
+        root_path.display(),
+        staging_path.display()
+    );
+    fs::create_dir_all(staging_path)
+        .with_context(|| format!("Failed to create staging dir: {}", staging_path.display()))?;
+
     let mut file_count: u64 = 0;
-    for entry in WalkDir::new(root_path).into_iter().filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if path.components().any(|c| c.as_os_str() == OsStr::new("orebfuscator_cache")) {
-            continue;
-        }
-        if path.is_file() {
-            if path.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("jar")) {
+    for backup_dir in backup_dirs {
+        let dir_name = backup_dir
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("Invalid backup directory: {}", backup_dir.display()))?;
+        let staging_subdir = staging_path.join(dir_name);
+
+        for entry in WalkDir::new(backup_dir).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if !path.is_file() || should_skip_minecraft_backup_file(path) {
                 continue;
             }
-            // Minecraft holds a lock on session.lock while the server is running; skip it
-            if path.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.eq_ignore_ascii_case("session.lock")) {
-                continue;
-            }
-            let relative = path.strip_prefix(root_path).with_context(|| format!("Invalid path prefix: {}", path.display()))?;
-            let dest = staging_path.join(relative);
+
+            let relative = path
+                .strip_prefix(backup_dir)
+                .with_context(|| format!("Invalid path prefix: {}", path.display()))?;
+            let dest = staging_subdir.join(relative);
             if let Some(p) = dest.parent() {
-                fs::create_dir_all(p).with_context(|| format!("Failed to create dir: {}", p.display()))?;
+                fs::create_dir_all(p)
+                    .with_context(|| format!("Failed to create dir: {}", p.display()))?;
             }
-            fs::copy(path, &dest).with_context(|| format!("Failed to copy {} to {}", path.display(), dest.display()))?;
+            fs::copy(path, &dest).with_context(|| {
+                format!("Failed to copy {} to {}", path.display(), dest.display())
+            })?;
             file_count += 1;
             if file_count <= 3 || file_count % 500 == 0 {
                 log::info!("Copied {} files so far...", file_count);
             }
         }
     }
-    log::info!("Copy complete: {} files", file_count);
+
+    log::info!("Minecraft staging copy complete: {} files", file_count);
     Ok(())
 }
 
@@ -346,7 +374,8 @@ impl Drop for StagingGuard {
     }
 }
 
-/// Minecraft backup: use 7-Zip if available (better compression), else built-in ZIP.
+/// Minecraft backup: selective directories (world, config, optional DiscordIntegration-Data).
+/// Uses 7-Zip if available (better compression), else built-in ZIP.
 /// When job has RCON settings: save-off, save-all flush, copy to staging, save-on, then compress staging.
 /// If app_handle is Some, progress (0-100) is emitted: 0-10% copy to staging, 10-90% compress, 90-100% copy to backup location.
 pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: Option<AppHandle>) -> Result<u64> {
@@ -356,6 +385,19 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
     if !root_path.exists() {
         anyhow::bail!("Server root does not exist: {}", job.root_dir);
     }
+
+    let backup_dirs = validation::resolve_minecraft_backup_dirs(&job.root_dir)?;
+    let dir_names: Vec<String> = backup_dirs
+        .iter()
+        .filter_map(|p| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+        })
+        .collect();
+    log::info!(
+        "Minecraft backup includes: {}",
+        dir_names.join(", ")
+    );
 
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
 
@@ -408,7 +450,7 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
         fs::create_dir_all(&staging_dir)
             .with_context(|| format!("Failed to create staging dir: {}", staging_dir.display()))?;
 
-        let copy_result = copy_root_to_staging(root_path, &staging_dir);
+        let copy_result = copy_minecraft_paths_to_staging(root_path, &staging_dir, &backup_dirs);
 
         log::info!("RCON: re-enabling saves (save-on)");
         let host = job.rcon_host.as_ref().unwrap().trim().to_string();
@@ -433,6 +475,13 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
         let _ = tx.send(10);
     }
 
+    let use_staging_layout = job_has_rcon(job);
+    let archive_items: Vec<String> = if use_staging_layout {
+        vec!["*".to_string()]
+    } else {
+        dir_names.clone()
+    };
+
     if let Some(seven_z) = find_7z() {
         let dest_dir = job.destination_dir.clone();
         let filename = format!("{}_{}.7z", job.name, timestamp);
@@ -449,7 +498,14 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
         log::info!("7-Zip writing to temp: {} then copying to {}", temp_7z.display(), backup_path.display());
 
         // 7z progress 0-100 is mapped to 10-90%
-        let result = run_minecraft_backup_7z(&seven_z, &temp_7z, &source_path, progress_tx.as_ref().cloned()).await;
+        let result = run_minecraft_backup_7z(
+            &seven_z,
+            &temp_7z,
+            &source_path,
+            &archive_items,
+            progress_tx.as_ref().cloned(),
+        )
+        .await;
         match result {
             Ok(outcome) => {
                 if outcome.file_size == 0 {
@@ -513,7 +569,7 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
             .with_context(|| format!("Failed to create destination directory: {}", parent.display()))?;
     }
 
-    let result = attempt_minecraft_backup(&temp_path, &backup_path, &source_path, job).await;
+    let result = attempt_minecraft_backup(&temp_path, &backup_path, &backup_dirs).await;
 
     match result {
         Ok(file_size) => {
@@ -539,7 +595,7 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
             log::warn!("Minecraft backup failed (disk full). Cleaning up old backups and retrying...");
             cleanup_minecraft_retention(&job.destination_dir, &job.name)
                 .context("Failed to cleanup old Minecraft backups")?;
-            let retry_result = attempt_minecraft_backup(&temp_path, &backup_path, &source_path, job).await;
+            let retry_result = attempt_minecraft_backup(&temp_path, &backup_path, &backup_dirs).await;
             match retry_result {
                 Ok(file_size) => {
                     if file_size == 0 {
@@ -584,18 +640,20 @@ enum SevenZipExit {
     Warn,
 }
 
-/// Run Minecraft backup using 7-Zip (LZMA2). Excludes .jar, orebfuscator_cache, session.lock.
+/// Run Minecraft backup using 7-Zip (LZMA2) for selective server directories.
 /// Streams 7-Zip output to the log so you can see progress and, if it hangs, the last file it was processing.
 /// If progress_tx is Some, sends percent (0-100) for UI progress bar.
 async fn run_minecraft_backup_7z(
     seven_z: &Path,
     backup_path: &Path,
     root_path: &Path,
+    archive_items: &[String],
     progress_tx: Option<mpsc::Sender<u8>>,
 ) -> Result<SevenZipOutcome> {
     let seven_z = seven_z.to_path_buf();
     let backup_path = backup_path.to_path_buf();
     let root_path = root_path.to_path_buf();
+    let archive_items = archive_items.to_vec();
 
     let result = tokio::task::spawn_blocking(move || {
         let backup_abs = backup_path
@@ -614,9 +672,11 @@ async fn run_minecraft_backup_7z(
             .arg("-xr!*.jar")
             .arg("-xr!orebfuscator_cache")
             .arg("-xr!session.lock")
-            .arg(&backup_str)
-            .arg("*")
-            .current_dir(&root_path)
+            .arg(&backup_str);
+        for item in &archive_items {
+            cmd.arg(item);
+        }
+        cmd.current_dir(&root_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         #[cfg(windows)]
@@ -630,7 +690,12 @@ async fn run_minecraft_backup_7z(
             Err(e) => return (Err(e.into()), backup_path),
         };
 
-        log::info!("7-Zip compression started (level 7, 12 threads) from {} -> {}", root_path.display(), backup_abs.display());
+        log::info!(
+            "7-Zip compression started (level 7, 12 threads) from {} -> {} (items: {})",
+            root_path.display(),
+            backup_abs.display(),
+            archive_items.join(", ")
+        );
 
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
@@ -786,33 +851,32 @@ async fn run_minecraft_backup_7z(
 async fn attempt_minecraft_backup(
     temp_path: &Path,
     backup_path: &Path,
-    root_path: &Path,
-    _job: &Job,
+    backup_dirs: &[PathBuf],
 ) -> Result<u64> {
     let file = fs::File::create(temp_path)
         .with_context(|| format!("Failed to create backup file: {}", temp_path.display()))?;
     let mut zip = ZipWriter::new(file);
     let mut skipped_locked: Vec<String> = Vec::new();
 
-    for entry in WalkDir::new(root_path)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        let path = entry.path();
-        if path.components().any(|c| c.as_os_str() == OsStr::new("orebfuscator_cache")) {
-            continue;
-        }
-        if path.is_file() {
-            if path.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("jar")) {
+    for backup_dir in backup_dirs {
+        let dir_name = backup_dir
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("Invalid backup directory: {}", backup_dir.display()))?;
+
+        for entry in WalkDir::new(backup_dir).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if !path.is_file() || should_skip_minecraft_backup_file(path) {
                 continue;
             }
-            if path.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.eq_ignore_ascii_case("session.lock")) {
-                continue;
-            }
+
             let relative = path
-                .strip_prefix(root_path)
+                .strip_prefix(backup_dir)
                 .with_context(|| format!("Invalid path prefix: {}", path.display()))?;
-            let zip_path = relative.to_string_lossy().replace('\\', "/");
+            let zip_path = format!(
+                "{}/{}",
+                dir_name.to_string_lossy(),
+                relative.to_string_lossy().replace('\\', "/")
+            );
             let options = zip_options_for_path(path);
 
             match fs::File::open(path) {

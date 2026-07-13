@@ -281,11 +281,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Initialize Plugin Toggle tab
   await loadPluginToggleServers();
-  initAdminSelect(document.getElementById('pluginToggleServerSelect'));
-  initAdminSelect(document.getElementById('intervalUnit'));
-  initAdminSelect(document.getElementById('wizardIntervalUnit'));
-  initAdminSelect(document.getElementById('mapSelect'));
-  initAdminSelect(document.getElementById('wizardMapSelect'));
+  initAllAdminSelects();
+  initWizardBackupTypeListeners();
 
   const pluginToggleServerSelect = document.getElementById('pluginToggleServerSelect');
   if (pluginToggleServerSelect) {
@@ -394,6 +391,59 @@ function getTotalWizardSteps() {
   return 5;
 }
 
+const WIZARD_GAME_LABELS = {
+  ark: {
+    name: 'ARK: Survival Ascended',
+    rootDescription: 'Select the root directory of your ARK: Survival Ascended server installation.'
+  },
+  minecraft: {
+    name: 'Minecraft',
+    rootDescription: 'Select the root directory of your Minecraft server (the folder containing world, config, and mods).'
+  },
+  palworld: {
+    name: 'Palworld',
+    rootDescription: 'Select the root directory of your Palworld dedicated server (the folder containing Pal).'
+  }
+};
+
+function getSelectedWizardBackupType() {
+  const checked = document.querySelector('input[name="wizardBackupType"]:checked');
+  return checked ? checked.value : null;
+}
+
+function updateWizardLabels() {
+  const step2 = document.getElementById('wizardStep2');
+  if (!step2) return;
+
+  const descEl = document.getElementById('wizardStep2Description')
+    || step2.querySelector('.step-description');
+  const titleEl = step2.querySelector('.step-title');
+  const type = backupType || getSelectedWizardBackupType();
+  const labels = type ? WIZARD_GAME_LABELS[type] : null;
+
+  if (descEl) {
+    descEl.textContent = labels
+      ? labels.rootDescription
+      : 'Select the root directory of your server installation.';
+  }
+  if (titleEl) {
+    titleEl.textContent = labels
+      ? `Step 2: ${labels.name} Server Root Directory`
+      : 'Step 2: Server Root Directory';
+  }
+}
+
+function initWizardBackupTypeListeners() {
+  document.querySelectorAll('input[name="wizardBackupType"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (radio.checked) {
+        backupType = radio.value;
+        updateWizardLabels();
+      }
+    });
+  });
+}
+
 window.showAddJobForm = () => {
   currentJobId = null;
   currentWizardStep = 1;
@@ -459,6 +509,7 @@ function resetWizard() {
   if (pwRconPassword) pwRconPassword.value = '';
   if (pwCluster) pwCluster.value = 'Palworld';
   clearWizardErrors();
+  updateWizardLabels();
 }
 
 function clearWizardErrors() {
@@ -532,6 +583,8 @@ function updateWizardStep() {
   document.getElementById('wizardPrevBtn').style.display = currentWizardStep > 1 ? 'block' : 'none';
   document.getElementById('wizardNextBtn').style.display = currentWizardStep < totalSteps ? 'block' : 'none';
   document.getElementById('wizardFinishBtn').style.display = currentWizardStep === totalSteps ? 'block' : 'none';
+
+  updateWizardLabels();
 }
 
 window.wizardNextStep = () => {
@@ -565,7 +618,8 @@ function validateCurrentStep() {
         document.getElementById('wizardBackupTypeError').textContent = 'Please choose ARK, Minecraft, or Palworld';
         isValid = false;
       } else {
-        backupType = palworldChecked ? 'palworld' : (minecraftChecked ? 'minecraft' : 'ark');
+        backupType = getSelectedWizardBackupType();
+        updateWizardLabels();
       }
       break;
     }
@@ -668,10 +722,13 @@ function validateCurrentStep() {
 
 window.pickWizardRootDir = async () => {
   try {
+    const gameName = backupType && WIZARD_GAME_LABELS[backupType]
+      ? WIZARD_GAME_LABELS[backupType].name
+      : 'Server';
     const selected = await open({
       directory: true,
       multiple: false,
-      title: 'Select Server Root Directory'
+      title: `Select ${gameName} Root Directory`
     });
     if (selected) {
       document.getElementById('wizardRootDir').value = selected;
@@ -2215,6 +2272,7 @@ let selectedPluginFolders = new Set();
 function initAdminSelect(selectEl) {
   if (!selectEl || selectEl.dataset.adminSelectWired === 'true') return;
   selectEl.dataset.adminSelectWired = 'true';
+  selectEl.classList.add('admin-select-native');
 
   const wrap = document.createElement('div');
   wrap.className = 'admin-select';
@@ -2298,6 +2356,10 @@ function initAdminSelect(selectEl) {
   selectEl.addEventListener('change', syncFromSelect);
   new MutationObserver(rebuildMenu).observe(selectEl, { childList: true });
   rebuildMenu();
+}
+
+function initAllAdminSelects(root = document) {
+  root.querySelectorAll('select:not(.admin-select-native)').forEach(initAdminSelect);
 }
 
 async function loadPluginToggleServers() {
