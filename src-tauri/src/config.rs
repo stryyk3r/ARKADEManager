@@ -7,6 +7,12 @@ pub struct Config {
     pub monthly_archive_destination: Option<String>,
     #[serde(default)]
     pub ark_maps: Option<Vec<MapDefinition>>,
+    #[serde(default)]
+    pub asa_server_root: Option<String>,
+    #[serde(default)]
+    pub minecraft_server_root: Option<String>,
+    #[serde(default)]
+    pub palworld_server_root: Option<String>,
 }
 
 impl Default for Config {
@@ -17,6 +23,9 @@ impl Default for Config {
                 r"C:\arkade\Arkade Shared Global\FOTM Backups".to_string(),
             ),
             ark_maps: None,
+            asa_server_root: Some(crate::server_roots::DEFAULT_ASA_SERVER_ROOT.to_string()),
+            minecraft_server_root: None,
+            palworld_server_root: None,
         }
     }
 }

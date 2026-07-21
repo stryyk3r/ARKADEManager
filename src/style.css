@@ -2278,6 +2278,16 @@ tr.group-header-row td {
   color: var(--green);
 }
 
+.server-root-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.server-root-settings .form-group {
+  margin: 0;
+}
+
 .maps-settings-remove {
   padding: 4px 8px;
   font-size: 12px;

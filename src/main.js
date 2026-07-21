@@ -168,6 +168,81 @@ function setupArkMapsSettings() {
   loadArkMapsSettings();
 }
 
+function showServerRootsMessage(text, type = 'info') {
+  const el = document.getElementById('serverRootsSaveMessage');
+  if (!el) return;
+  el.hidden = !text;
+  el.textContent = text || '';
+  el.classList.remove('is-error', 'is-success');
+  if (type === 'error') el.classList.add('is-error');
+  if (type === 'success') el.classList.add('is-success');
+}
+
+async function loadServerRootSettings() {
+  try {
+    const config = await invoke('get_config');
+    const asaInput = document.getElementById('asaServerRootInput');
+    const minecraftInput = document.getElementById('minecraftServerRootInput');
+    const palworldInput = document.getElementById('palworldServerRootInput');
+    if (asaInput) asaInput.value = config.asa_server_root || '';
+    if (minecraftInput) minecraftInput.value = config.minecraft_server_root || '';
+    if (palworldInput) palworldInput.value = config.palworld_server_root || '';
+    showServerRootsMessage('');
+  } catch (e) {
+    console.error('Failed to load server root settings:', e);
+    showServerRootsMessage('Failed to load server directories.', 'error');
+  }
+}
+
+async function pickServerRootDirectory(inputId) {
+  try {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: 'Select server root directory',
+    });
+    if (selected) {
+      const input = document.getElementById(inputId);
+      if (input) input.value = selected;
+    }
+  } catch (e) {
+    console.error('Failed to pick directory:', e);
+    alert('Failed to open directory picker: ' + e.message);
+  }
+}
+
+function setupServerRootSettings() {
+  loadServerRootSettings();
+
+  document.getElementById('browseAsaServerRootBtn')?.addEventListener('click', () => {
+    pickServerRootDirectory('asaServerRootInput');
+  });
+  document.getElementById('browseMinecraftServerRootBtn')?.addEventListener('click', () => {
+    pickServerRootDirectory('minecraftServerRootInput');
+  });
+  document.getElementById('browsePalworldServerRootBtn')?.addEventListener('click', () => {
+    pickServerRootDirectory('palworldServerRootInput');
+  });
+
+  document.getElementById('saveServerRootsBtn')?.addEventListener('click', async () => {
+    try {
+      await invoke('save_server_roots', {
+        asaServerRoot: document.getElementById('asaServerRootInput')?.value.trim() || null,
+        minecraftServerRoot: document.getElementById('minecraftServerRootInput')?.value.trim() || null,
+        palworldServerRoot: document.getElementById('palworldServerRootInput')?.value.trim() || null,
+      });
+      showServerRootsMessage('Server directories saved.', 'success');
+      await loadPluginToggleServers();
+      if (typeof window.refreshPluginDestinations === 'function') {
+        await window.refreshPluginDestinations();
+      }
+    } catch (e) {
+      console.error('Failed to save server roots:', e);
+      showServerRootsMessage(String(e), 'error');
+    }
+  });
+}
+
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
   // Load theme (default dark to match server manager style)
@@ -278,6 +353,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await refreshMapSelects(false);
   setupArkMapsSettings();
+  setupServerRootSettings();
   
   // Initialize Plugin Toggle tab
   await loadPluginToggleServers();
@@ -1822,7 +1898,7 @@ function renderDestinations() {
   const toggleBtn = document.getElementById('destToggleAllBtn');
 
   if (pluginDestinations.length === 0) {
-    container.innerHTML = '<div class="empty-state">No ARK servers found. Add backup jobs with a server root, or ensure C:\\arkservers\\asaservers exists.</div>';
+    container.innerHTML = '<div class="empty-state">No ARK servers found. Set the ASA Server Root Directory in Settings (each server should be a subfolder).</div>';
     if (toggleBtn) toggleBtn.disabled = true;
     return;
   }
@@ -2366,14 +2442,32 @@ async function loadPluginToggleServers() {
   try {
     const servers = await invoke('get_plugin_server_roots');
     const select = document.getElementById('pluginToggleServerSelect');
+    if (!select) return;
+
+    const previous = select.value;
     select.innerHTML = '<option value="">Select a server</option>';
-    
-    servers.forEach(server => {
+
+    if (servers.length === 0) {
       const option = document.createElement('option');
-      option.value = server;
-      option.textContent = server;
+      option.value = '';
+      option.textContent = 'No servers found — set ASA root in Settings';
+      option.disabled = true;
       select.appendChild(option);
-    });
+    } else {
+      servers.forEach(server => {
+        const option = document.createElement('option');
+        option.value = server;
+        const parts = server.split(/[/\\]/);
+        option.textContent = parts[parts.length - 1] || server;
+        option.title = server;
+        select.appendChild(option);
+      });
+      if (previous && [...select.options].some(opt => opt.value === previous)) {
+        select.value = previous;
+      }
+    }
+
+    select.dispatchEvent(new Event('change', { bubbles: true }));
   } catch (e) {
     console.error('Failed to load servers:', e);
   }
@@ -2644,8 +2738,8 @@ function updateDataLookupFormLabels() {
   }
   if (hint) {
     hint.textContent = isProfile
-      ? 'Searches all configured ARK backup jobs for .arkprofile files.'
-      : 'Searches all configured ARK backup jobs for .arktribe files.';
+      ? 'Searches ASA servers under your configured server root for .arkprofile files.'
+      : 'Searches ASA servers under your configured server root for .arktribe files.';
   }
 }
 

@@ -1,10 +1,20 @@
 use crate::app_data::AppData;
-use crate::job::Job;
+use crate::server_roots;
 use crate::validation::derive_saves_dir;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone)]
+struct SearchTarget {
+    job_id: String,
+    job_name: String,
+    map: String,
+    root_dir: String,
+    saves_dir: PathBuf,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DataLookupMatch {
@@ -64,7 +74,7 @@ fn expected_filename(lookup_type: &str, identifier: &str) -> Result<String, Stri
 }
 
 fn collect_match(
-    job: &Job,
+    target: &SearchTarget,
     file_path: &Path,
     lookup_type: &str,
     identifier: &str,
@@ -75,10 +85,10 @@ fn collect_match(
     });
 
     Ok(DataLookupMatch {
-        job_id: job.id.clone(),
-        job_name: job.name.clone(),
-        map: job.map.clone(),
-        root_dir: job.root_dir.clone(),
+        job_id: target.job_id.clone(),
+        job_name: target.job_name.clone(),
+        map: target.map.clone(),
+        root_dir: target.root_dir.clone(),
         file_path: file_path.to_string_lossy().to_string(),
         file_name: file_path
             .file_name()
@@ -89,6 +99,66 @@ fn collect_match(
         lookup_type: lookup_type.to_string(),
         identifier: identifier.to_string(),
     })
+}
+
+fn collect_search_targets(app_data: &AppData) -> Result<Vec<SearchTarget>, String> {
+    let config = app_data.get_config().map_err(|e| e.to_string())?;
+    let maps = config.ark_maps();
+    let jobs = app_data.list_jobs().map_err(|e| e.to_string())?;
+    let mut seen_saves = HashSet::new();
+    let mut targets = Vec::new();
+
+    for job in jobs.iter().filter(|job| job.job_type == "ark") {
+        let Some(map) = job.resolve_map(&maps) else {
+            continue;
+        };
+
+        let saves_dir = derive_saves_dir(&job.root_dir, &map.folder_name);
+        let key = saves_dir.to_string_lossy().to_lowercase();
+        if seen_saves.insert(key) {
+            targets.push(SearchTarget {
+                job_id: job.id.clone(),
+                job_name: job.name.clone(),
+                map: job.map.clone(),
+                root_dir: job.root_dir.clone(),
+                saves_dir,
+            });
+        }
+    }
+
+    let job_roots: Vec<String> = jobs
+        .iter()
+        .filter(|job| job.job_type == "ark")
+        .map(|job| job.root_dir.clone())
+        .collect();
+
+    for server_root in server_roots::collect_asa_server_roots(&config, &job_roots) {
+        let server_name = Path::new(&server_root)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        for map in &maps {
+            let saves_dir = derive_saves_dir(&server_root, &map.folder_name);
+            if !saves_dir.is_dir() {
+                continue;
+            }
+
+            let key = saves_dir.to_string_lossy().to_lowercase();
+            if seen_saves.insert(key) {
+                targets.push(SearchTarget {
+                    job_id: String::new(),
+                    job_name: server_name.clone(),
+                    map: map.id.clone(),
+                    root_dir: server_root.clone(),
+                    saves_dir,
+                });
+            }
+        }
+    }
+
+    Ok(targets)
 }
 
 pub fn lookup_data_files(
@@ -103,21 +173,15 @@ pub fn lookup_data_files(
     };
 
     let filename = expected_filename(lookup_type, &normalized_id)?;
-    let jobs = app_data.list_jobs().map_err(|e| e.to_string())?;
-    let maps = app_data.get_config().map_err(|e| e.to_string())?.ark_maps();
+    let targets = collect_search_targets(app_data)?;
 
     let mut matches = Vec::new();
 
-    for job in jobs.iter().filter(|job| job.job_type == "ark") {
-        let Some(map) = job.resolve_map(&maps) else {
-            continue;
-        };
-
-        let saves_dir = derive_saves_dir(&job.root_dir, &map.folder_name);
-        let file_path = saves_dir.join(&filename);
+    for target in &targets {
+        let file_path = target.saves_dir.join(&filename);
 
         if file_path.is_file() {
-            matches.push(collect_match(job, &file_path, lookup_type, &normalized_id)?);
+            matches.push(collect_match(target, &file_path, lookup_type, &normalized_id)?);
         }
     }
 
@@ -130,21 +194,12 @@ pub fn lookup_data_files(
     Ok(matches)
 }
 
-fn collect_allowed_saves_dirs(jobs: &[Job], maps: &[crate::map::MapDefinition]) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    for job in jobs.iter().filter(|job| job.job_type == "ark") {
-        let Some(map) = job.resolve_map(maps) else {
-            continue;
-        };
-
-        let saves_dir = derive_saves_dir(&job.root_dir, &map.folder_name);
-        if let Ok(canonical) = saves_dir.canonicalize() {
-            dirs.push(canonical);
-        }
-    }
-
-    dirs
+fn collect_allowed_saves_dirs(app_data: &AppData) -> Vec<PathBuf> {
+    collect_search_targets(app_data)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|target| target.saves_dir.canonicalize().ok())
+        .collect()
 }
 
 fn is_path_under_allowed_dir(path: &Path, allowed_dirs: &[PathBuf]) -> bool {
@@ -159,12 +214,7 @@ fn is_allowed_data_file(path: &Path) -> bool {
 }
 
 pub fn delete_data_files(app_data: &AppData, file_paths: &[String]) -> Vec<DeleteFileResult> {
-    let jobs = app_data.list_jobs().unwrap_or_default();
-    let maps = app_data
-        .get_config()
-        .map(|c| c.ark_maps())
-        .unwrap_or_else(|_| crate::map::default_ark_maps());
-    let allowed_dirs = collect_allowed_saves_dirs(&jobs, &maps);
+    let allowed_dirs = collect_allowed_saves_dirs(app_data);
 
     file_paths
         .iter()

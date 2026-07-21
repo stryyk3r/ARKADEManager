@@ -10,6 +10,7 @@ mod map;
 mod palworld_rcon;
 mod plugins;
 mod scheduler;
+mod server_roots;
 mod validation;
 
 use std::sync::Arc;
@@ -479,19 +480,37 @@ async fn delete_data_files(
 }
 
 #[tauri::command]
+async fn save_server_roots(
+    asa_server_root: Option<String>,
+    minecraft_server_root: Option<String>,
+    palworld_server_root: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<config::Config, String> {
+    let mut app_data = state.app_data.lock().await;
+    let mut config = app_data.get_config().map_err(|e| e.to_string())?;
+    config.asa_server_root = asa_server_root.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    config.minecraft_server_root = minecraft_server_root
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    config.palworld_server_root = palworld_server_root
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    app_data.save_config(&config).map_err(|e| e.to_string())?;
+    Ok(config)
+}
+
+#[tauri::command]
 async fn get_plugin_server_roots(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
     let app_data = state.app_data.lock().await;
+    let config = app_data.get_config().map_err(|e| e.to_string())?;
     let jobs = app_data.list_jobs().map_err(|e| e.to_string())?;
-    
-    // Get unique root directories
-    let roots: std::collections::HashSet<String> = jobs
+    let job_roots: Vec<String> = jobs
         .iter()
+        .filter(|job| job.job_type == "ark")
         .map(|job| job.root_dir.clone())
         .collect();
-    
-    let mut roots_vec: Vec<String> = roots.into_iter().collect();
-    roots_vec.sort();
-    Ok(roots_vec)
+
+    Ok(server_roots::collect_asa_server_roots(&config, &job_roots))
 }
 
 #[tauri::command]
@@ -591,13 +610,14 @@ async fn toggle_plugin_for_all_servers(
     use crate::validation::derive_plugins_dir;
     
     let app_data = state.app_data.lock().await;
+    let config = app_data.get_config().map_err(|e| e.to_string())?;
     let jobs = app_data.list_jobs().map_err(|e| e.to_string())?;
-    
-    // Get unique root directories
-    let roots: std::collections::HashSet<String> = jobs
+    let job_roots: Vec<String> = jobs
         .iter()
+        .filter(|job| job.job_type == "ark")
         .map(|job| job.root_dir.clone())
         .collect();
+    let roots = server_roots::collect_asa_server_roots(&config, &job_roots);
     
     let target_name = if target_state_disabled {
         format!("{}_OFF", base_folder_name)
@@ -665,35 +685,31 @@ async fn discover_plugin_destinations(state: tauri::State<'_, AppState>) -> Resu
 
     let norm = |p: &str| p.to_lowercase();
 
-    // Add destinations from backup job roots (so servers show even if C:\arkservers\asaservers doesn't exist)
+    // Add destinations from configured ASA server root and backup jobs
     {
         let app_data = state.app_data.lock().await;
-        if let Ok(jobs) = app_data.list_jobs() {
-            for job in jobs {
-                let root = &job.root_dir;
-                let plugin_path = derive_plugins_dir(root);
-                let plugin_path_str = plugin_path.to_string_lossy().to_string();
-                if seen.insert(norm(&plugin_path_str)) {
-                    let name = std::path::Path::new(root)
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("Unknown")
-                        .to_string();
-                    destinations.push(plugins::DestinationServer {
-                        name,
-                        path: root.clone(),
-                        plugin_path: plugin_path_str,
-                    });
-                }
-            }
-        }
-    }
+        let config = app_data.get_config().map_err(|e| e.to_string())?;
+        let jobs = app_data.list_jobs().map_err(|e| e.to_string())?;
+        let job_roots: Vec<String> = jobs
+            .iter()
+            .filter(|job| job.job_type == "ark")
+            .map(|job| job.root_dir.clone())
+            .collect();
 
-    // Add from C:\arkservers\asaservers, skipping any we already have (case-insensitive)
-    if let Ok(from_disk) = plugins::discover_destinations() {
-        for d in from_disk {
-            if seen.insert(norm(&d.plugin_path)) {
-                destinations.push(d);
+        for root in server_roots::collect_asa_server_roots(&config, &job_roots) {
+            let plugin_path = derive_plugins_dir(&root);
+            let plugin_path_str = plugin_path.to_string_lossy().to_string();
+            if seen.insert(norm(&plugin_path_str)) {
+                let name = std::path::Path::new(&root)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Unknown")
+                    .to_string();
+                destinations.push(plugins::DestinationServer {
+                    name,
+                    path: root,
+                    plugin_path: plugin_path_str,
+                });
             }
         }
     }
@@ -842,6 +858,7 @@ fn main() {
             get_ark_maps,
             save_ark_maps,
             reset_ark_maps,
+            save_server_roots,
             list_jobs,
             add_job,
             update_job,

@@ -70,12 +70,16 @@ pub fn list_source_plugins(source_path: &str) -> Result<Vec<SourcePlugin>, Strin
     Ok(plugins)
 }
 
-/// Discover ARK server destinations by scanning C:\arkservers\asaservers
-pub fn discover_destinations() -> Result<Vec<DestinationServer>, String> {
-    let root_path = Path::new(r"C:\arkservers\asaservers");
+/// Discover ARK server destinations by scanning a configured parent directory.
+pub fn discover_destinations_under(parent: &str) -> Result<Vec<DestinationServer>, String> {
+    let root_path = Path::new(parent.trim());
     
-    if !root_path.exists() {
-        return Ok(Vec::new()); // Return empty list if root doesn't exist
+    if parent.trim().is_empty() || !root_path.exists() {
+        return Ok(Vec::new());
+    }
+    
+    if !root_path.is_dir() {
+        return Err(format!("Server root is not a directory: {}", parent));
     }
     
     let mut destinations = Vec::new();
