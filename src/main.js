@@ -2435,7 +2435,11 @@ function initAdminSelect(selectEl) {
 }
 
 function initAllAdminSelects(root = document) {
-  root.querySelectorAll('select:not(.admin-select-native)').forEach(initAdminSelect);
+  root.querySelectorAll('select').forEach(selectEl => {
+    if (selectEl.dataset.adminSelectWired !== 'true') {
+      initAdminSelect(selectEl);
+    }
+  });
 }
 
 async function loadPluginToggleServers() {
@@ -2465,6 +2469,10 @@ async function loadPluginToggleServers() {
       if (previous && [...select.options].some(opt => opt.value === previous)) {
         select.value = previous;
       }
+    }
+
+    if (select.dataset.adminSelectWired !== 'true') {
+      initAdminSelect(select);
     }
 
     select.dispatchEvent(new Event('change', { bubbles: true }));
