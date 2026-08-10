@@ -67,7 +67,15 @@ pub struct JobInput {
 
 impl Job {
     pub fn from_input(input: JobInput) -> Self {
-        let id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        Self::from_input_with_existing(input, None)
+    }
+
+    pub fn from_input_with_existing(input: JobInput, existing: Option<Job>) -> Self {
+        let id = input
+            .id
+            .clone()
+            .or_else(|| existing.as_ref().map(|job| job.id.clone()))
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
         let now = Utc::now();
         let next_run = if input.enabled {
             Some(calculate_next_run(now, input.interval_value, &input.interval_unit))
@@ -91,10 +99,10 @@ impl Job {
             interval_unit: input.interval_unit,
             retention_days: input.retention_days,
             enabled: input.enabled,
-            last_run_at: None,
+            last_run_at: existing.as_ref().and_then(|job| job.last_run_at.clone()),
             next_run_at: next_run.map(|dt| dt.to_rfc3339()),
-            last_file_size: None,
-            last_error: None,
+            last_file_size: existing.as_ref().and_then(|job| job.last_file_size),
+            last_error: existing.as_ref().and_then(|job| job.last_error.clone()),
             rcon_host: input.rcon_host,
             rcon_port: input.rcon_port,
             rcon_password: input.rcon_password,

@@ -15,6 +15,18 @@ let dataLookupResults = [];
 const GITHUB_RELEASES_URL = 'https://github.com/stryyk3r/ARKADEManager/releases';
 let editableArkMaps = [];
 
+function setSelectValue(selectEl, value) {
+  if (!selectEl) return;
+  const normalized = String(value ?? '');
+  const hasOption = normalized && [...selectEl.options].some((opt) => opt.value === normalized);
+  selectEl.value = hasOption ? normalized : '';
+  if (typeof selectEl._syncAdminSelect === 'function') {
+    selectEl._syncAdminSelect();
+  } else {
+    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
 function populateMapSelect(selectEl, maps, selectedValue = '') {
   if (!selectEl) return;
   const current = selectedValue || selectEl.value;
@@ -25,23 +37,21 @@ function populateMapSelect(selectEl, maps, selectedValue = '') {
     opt.textContent = map.display_name;
     selectEl.appendChild(opt);
   });
-  if (current && [...selectEl.options].some(opt => opt.value === current)) {
-    selectEl.value = current;
-  }
+  setSelectValue(selectEl, current);
 }
 
-async function refreshMapSelects(preserveValues = true) {
+async function refreshMapSelects(preserveValues = true, explicitValues = {}) {
   try {
     const maps = await invoke('get_ark_maps');
     populateMapSelect(
       document.getElementById('mapSelect'),
       maps,
-      preserveValues ? document.getElementById('mapSelect')?.value : ''
+      explicitValues.mapSelect ?? (preserveValues ? document.getElementById('mapSelect')?.value : '')
     );
     populateMapSelect(
       document.getElementById('wizardMapSelect'),
       maps,
-      preserveValues ? document.getElementById('wizardMapSelect')?.value : ''
+      explicitValues.wizardMapSelect ?? (preserveValues ? document.getElementById('wizardMapSelect')?.value : '')
     );
     return maps;
   } catch (e) {
@@ -956,7 +966,7 @@ window.updateJob = async (jobId) => {
       return;
     }
     
-    loadJobIntoForm(job);
+    await loadJobIntoForm(job);
     const formContainer = document.getElementById('jobFormContainer');
     formContainer.style.display = 'block';
     formContainer.style.visibility = 'visible';
@@ -1068,7 +1078,7 @@ window.openLogsFolder = async () => {
 window.clearForm = () => {
   document.getElementById('rootDir').value = '';
   document.getElementById('destinationDir').value = '';
-  document.getElementById('mapSelect').value = '';
+  setSelectValue(document.getElementById('mapSelect'), '');
   document.getElementById('jobName').value = '';
   document.getElementById('jobNameMinecraft').value = '';
   document.getElementById('includeSaves').checked = false;
@@ -1648,7 +1658,7 @@ function setJobFormVisibilityForType(jobType) {
   if (pwEl) pwEl.style.display = type === 'palworld' ? '' : 'none';
 }
 
-function loadJobIntoForm(job) {
+async function loadJobIntoForm(job) {
   currentJobId = job.id;
   currentJobType = job.job_type || 'ark';
   const isMinecraft = currentJobType === 'minecraft';
@@ -1678,7 +1688,7 @@ function loadJobIntoForm(job) {
     document.getElementById('rconPortPalworld').value = job.rcon_port || 25575;
     document.getElementById('rconPasswordPalworld').value = job.rcon_password || '';
   } else {
-    document.getElementById('mapSelect').value = job.map || '';
+    await refreshMapSelects(true, { mapSelect: job.map || '' });
     document.getElementById('jobName').value = job.name || '';
     const arkCluster = document.getElementById('monthlyCluster');
     if (arkCluster) arkCluster.value = job.monthly_cluster || 'ASA Legacy';
@@ -2430,6 +2440,7 @@ function initAdminSelect(selectEl) {
   }
 
   selectEl.addEventListener('change', syncFromSelect);
+  selectEl._syncAdminSelect = syncFromSelect;
   new MutationObserver(rebuildMenu).observe(selectEl, { childList: true });
   rebuildMenu();
 }

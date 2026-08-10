@@ -99,7 +99,8 @@ impl AppData {
         let job_index = jobs.iter().position(|j| j.id == *id)
             .ok_or_else(|| anyhow::anyhow!("Job not found"))?;
         
-        let updated_job = Job::from_input(job_input);
+        let existing = jobs[job_index].clone();
+        let updated_job = Job::from_input_with_existing(job_input, Some(existing));
         jobs[job_index] = updated_job.clone();
         self.save_jobs(&jobs)?;
         Ok(updated_job)

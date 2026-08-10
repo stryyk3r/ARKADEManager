@@ -59,8 +59,31 @@ async fn save_ark_maps(
 
     let mut app_data = state.app_data.lock().await;
     let mut config = app_data.get_config().map_err(|e| e.to_string())?;
+    let old_maps = config.ark_maps();
+    let renames = map::find_map_id_renames(&old_maps, &maps);
     config.ark_maps = Some(maps);
     app_data.save_config(&config).map_err(|e| e.to_string())?;
+
+    if !renames.is_empty() {
+        let mut jobs = app_data.list_jobs().map_err(|e| e.to_string())?;
+        let mut changed = false;
+        for job in jobs.iter_mut() {
+            if let Some(new_id) = renames.get(&job.map) {
+                log::info!(
+                    "Migrating job \"{}\" map id {} -> {}",
+                    job.name,
+                    job.map,
+                    new_id
+                );
+                job.map = new_id.clone();
+                changed = true;
+            }
+        }
+        if changed {
+            app_data.save_jobs(&jobs).map_err(|e| e.to_string())?;
+        }
+    }
+
     Ok(config.ark_maps())
 }
 

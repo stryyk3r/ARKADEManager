@@ -4,12 +4,21 @@ All notable changes to ARKADE Manager are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.4.5] - 2026-08-10
+
+### Fixed
+
+- **ARK map job edits** — map dropdown syncs correctly when editing jobs; renaming a map ID in Settings migrates linked jobs; job updates preserve last-run stats.
+
+---
+
 ## [2.4.2] - 2026-07-13
 
 ### Fixed
 
 - **Palworld RCON** — use Source RCON (same protocol as Minecraft) instead of a custom packet format; retry `127.0.0.1` when the configured public IP is unreachable from the same machine; clearer connect vs auth error messages.
 - **Backup wizard** — Step 2 description and title now update for Minecraft and Palworld instead of always showing ARK: Survival Ascended.
+- **ARK map job edits** — custom map dropdown now syncs when loading a job for edit (prevents the last-selected map appearing on every job); renaming a map ID in Settings migrates existing jobs when the saves folder name is unchanged; job update preserves last run stats instead of resetting them.
 
 ---
 
@@ -119,6 +128,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Application migrated to Tauri v2 (Rust backend + web frontend).
 - ARK ASA backup jobs, scheduling, monthly archive, logs.
 
+[2.4.5]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.5
 [2.4.2]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.2
 [2.4.1]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.1
 [2.4.0]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.0
