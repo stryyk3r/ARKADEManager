@@ -1,5 +1,6 @@
 use crate::job::JobInput;
 use crate::map::{self, MapDefinition};
+use crate::server_ini;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
@@ -37,16 +38,7 @@ pub fn validate_job(job: &JobInput, maps: &[MapDefinition]) -> Result<()> {
 
     if job.job_type == "palworld" {
         validate_interval_retention(job)?;
-        validate_rcon_fields(job)?;
-
-        let config_dir = derive_palworld_config_dir(&job.root_dir);
-        let settings_ini = config_dir.join("PalWorldSettings.ini");
-        if !settings_ini.exists() {
-            anyhow::bail!(
-                "PalWorldSettings.ini not found in: {}",
-                config_dir.display()
-            );
-        }
+        validate_palworld_rest_settings(&job.root_dir)?;
 
         let world_dir = discover_palworld_world_dir(&job.root_dir)?;
         if !world_dir.join("Players").exists() {
@@ -132,6 +124,33 @@ fn validate_rcon_fields(job: &JobInput) -> Result<()> {
     }
     if !has_password {
         anyhow::bail!("Backup requires RCON password");
+    }
+    Ok(())
+}
+
+fn validate_palworld_rest_settings(root_dir: &str) -> Result<()> {
+    let config_dir = derive_palworld_config_dir(root_dir);
+    let settings_ini = config_dir.join("PalWorldSettings.ini");
+    if !settings_ini.exists() {
+        anyhow::bail!(
+            "PalWorldSettings.ini not found in: {}",
+            config_dir.display()
+        );
+    }
+
+    let settings = server_ini::read_palworld_rest_settings(&config_dir)?;
+    if !settings.rest_api_enabled {
+        anyhow::bail!(
+            "Palworld REST API is disabled in PalWorldSettings.ini (RESTAPIEnabled=False). Enable REST API before creating a Palworld backup job."
+        );
+    }
+    if settings.rest_api_port == 0 {
+        anyhow::bail!("Palworld RESTAPIPort is invalid in PalWorldSettings.ini");
+    }
+    if settings.admin_password.trim().is_empty() {
+        anyhow::bail!(
+            "Palworld AdminPassword is empty in PalWorldSettings.ini. REST save requires a non-empty admin password."
+        );
     }
     Ok(())
 }

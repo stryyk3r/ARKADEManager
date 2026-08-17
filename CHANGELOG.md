@@ -4,6 +4,19 @@ All notable changes to ARKADE Manager are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.4.6] - 2026-08-17
+
+### Changed
+
+- **Palworld backups** — pre-save now uses the official REST API (`POST /v1/api/save`) instead of RCON; `RESTAPIPort`, `RESTAPIEnabled`, and `AdminPassword` are read from `PalWorldSettings.ini` at backup time. Optional API host override only (defaults to `127.0.0.1`).
+- **ARK backups** — when `RCONEnabled=True` in `GameUserSettings.ini`, sends `SaveWorld` via RCON using auto-read `RCONPort` and `ServerAdminPassword` before zipping.
+
+### Fixed
+
+- **Palworld server stability** — removes RCON `Save` during backup, which could crash live Palworld servers.
+
+---
+
 ## [2.4.5] - 2026-08-10
 
 ### Fixed
@@ -128,6 +141,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Application migrated to Tauri v2 (Rust backend + web frontend).
 - ARK ASA backup jobs, scheduling, monthly archive, logs.
 
+[2.4.6]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.6
 [2.4.5]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.5
 [2.4.2]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.2
 [2.4.1]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.1

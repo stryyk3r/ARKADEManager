@@ -59,24 +59,6 @@ pub fn configured_asa_parent(config: &Config) -> String {
         .to_string()
 }
 
-pub fn configured_minecraft_parent(config: &Config) -> Option<String> {
-    config
-        .minecraft_server_root
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.trim_end_matches(['\\', '/']).to_string())
-}
-
-pub fn configured_palworld_parent(config: &Config) -> Option<String> {
-    config
-        .palworld_server_root
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.trim_end_matches(['\\', '/']).to_string())
-}
-
 pub fn collect_asa_server_roots(config: &Config, job_roots: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut roots = Vec::new();
@@ -92,40 +74,3 @@ pub fn collect_asa_server_roots(config: &Config, job_roots: &[String]) -> Vec<St
     roots
 }
 
-pub fn collect_minecraft_server_roots(config: &Config, job_roots: &[String]) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut roots = Vec::new();
-
-    if let Some(parent) = configured_minecraft_parent(config) {
-        merge_unique_paths(&mut roots, &mut seen, list_child_directories(&parent));
-    }
-
-    for root in job_roots {
-        if root.trim().is_empty() {
-            continue;
-        }
-        merge_unique_paths(&mut roots, &mut seen, std::iter::once(root.clone()));
-    }
-
-    roots.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
-    roots
-}
-
-pub fn collect_palworld_server_roots(config: &Config, job_roots: &[String]) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut roots = Vec::new();
-
-    if let Some(parent) = configured_palworld_parent(config) {
-        merge_unique_paths(&mut roots, &mut seen, list_child_directories(&parent));
-    }
-
-    for root in job_roots {
-        if root.trim().is_empty() {
-            continue;
-        }
-        merge_unique_paths(&mut roots, &mut seen, std::iter::once(root.clone()));
-    }
-
-    roots.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
-    roots
-}

@@ -582,8 +582,6 @@ function resetWizard() {
   const pwRetention = document.getElementById('wizardPalworldRetentionDays');
   const pwEnabled = document.getElementById('wizardPalworldEnabled');
   const pwRconHost = document.getElementById('wizardPalworldRconHost');
-  const pwRconPort = document.getElementById('wizardPalworldRconPort');
-  const pwRconPassword = document.getElementById('wizardPalworldRconPassword');
   const pwCluster = document.getElementById('wizardMonthlyClusterPalworld');
   if (pwName) pwName.value = '';
   if (pwInterval) pwInterval.value = '1';
@@ -591,8 +589,6 @@ function resetWizard() {
   if (pwRetention) pwRetention.value = '7';
   if (pwEnabled) pwEnabled.checked = false;
   if (pwRconHost) pwRconHost.value = '';
-  if (pwRconPort) pwRconPort.value = '25575';
-  if (pwRconPassword) pwRconPassword.value = '';
   if (pwCluster) pwCluster.value = 'Palworld';
   clearWizardErrors();
   updateWizardLabels();
@@ -621,12 +617,6 @@ function clearWizardErrors() {
   if (pwErr) pwErr.textContent = '';
   const pwClusterErr = document.getElementById('wizardMonthlyClusterPalworldError');
   if (pwClusterErr) pwClusterErr.textContent = '';
-  const pwRconHostErr = document.getElementById('wizardPalworldRconHostError');
-  if (pwRconHostErr) pwRconHostErr.textContent = '';
-  const pwRconPortErr = document.getElementById('wizardPalworldRconPortError');
-  if (pwRconPortErr) pwRconPortErr.textContent = '';
-  const pwRconPwErr = document.getElementById('wizardPalworldRconPasswordError');
-  if (pwRconPwErr) pwRconPwErr.textContent = '';
 }
 
 function updateWizardStep() {
@@ -764,22 +754,6 @@ function validateCurrentStep() {
           document.getElementById('wizardMonthlyClusterPalworldError').textContent = 'Monthly cluster is required';
           isValid = false;
         }
-        const pwRconHost = document.getElementById('wizardPalworldRconHost').value.trim();
-        if (!pwRconHost) {
-          document.getElementById('wizardPalworldRconHostError').textContent = 'RCON host is required';
-          isValid = false;
-        }
-        const pwRconPortVal = document.getElementById('wizardPalworldRconPort').value.trim();
-        const pwRconPort = parseInt(pwRconPortVal, 10);
-        if (!pwRconPortVal || isNaN(pwRconPort) || pwRconPort < 1 || pwRconPort > 65535) {
-          document.getElementById('wizardPalworldRconPortError').textContent = 'RCON port must be 1-65535';
-          isValid = false;
-        }
-        const pwRconPassword = document.getElementById('wizardPalworldRconPassword').value;
-        if (!pwRconPassword) {
-          document.getElementById('wizardPalworldRconPasswordError').textContent = 'RCON password is required';
-          isValid = false;
-        }
       } else {
         const map = document.getElementById('wizardMapSelect').value;
         if (!map) {
@@ -885,9 +859,9 @@ window.wizardFinish = async () => {
       interval_unit: document.getElementById('wizardPalworldIntervalUnit').value,
       retention_days: parseInt(document.getElementById('wizardPalworldRetentionDays').value) || 7,
       enabled: document.getElementById('wizardPalworldEnabled').checked,
-      rcon_host: document.getElementById('wizardPalworldRconHost').value.trim(),
-      rcon_port: parseInt(document.getElementById('wizardPalworldRconPort').value, 10) || 25575,
-      rcon_password: document.getElementById('wizardPalworldRconPassword').value
+      rcon_host: document.getElementById('wizardPalworldRconHost').value.trim() || null,
+      rcon_port: null,
+      rcon_password: null
     };
   } else {
     job = {
@@ -1359,22 +1333,6 @@ function collectJobData() {
       showError('jobNamePalworldError', 'Job name is required');
       return null;
     }
-    const rconHost = document.getElementById('rconHostPalworld').value.trim();
-    const rconPortVal = document.getElementById('rconPortPalworld').value.trim();
-    const rconPort = parseInt(rconPortVal, 10);
-    const rconPassword = document.getElementById('rconPasswordPalworld').value;
-    if (!rconHost) {
-      showError('jobNamePalworldError', 'RCON host is required');
-      return null;
-    }
-    if (!rconPortVal || isNaN(rconPort) || rconPort < 1 || rconPort > 65535) {
-      showError('jobNamePalworldError', 'RCON port must be 1-65535');
-      return null;
-    }
-    if (!rconPassword) {
-      showError('jobNamePalworldError', 'RCON password is required');
-      return null;
-    }
     intervalValue = parseInt(document.getElementById('intervalValuePalworld').value) || 1;
     intervalUnit = document.getElementById('intervalUnitPalworld').value;
     retentionDays = parseInt(document.getElementById('retentionDaysPalworld').value) || 7;
@@ -1426,9 +1384,10 @@ function collectJobData() {
     payload.rcon_port = parseInt(document.getElementById('rconPortMinecraft').value, 10) || 25575;
     payload.rcon_password = document.getElementById('rconPasswordMinecraft').value;
   } else if (isPalworld) {
-    payload.rcon_host = document.getElementById('rconHostPalworld').value.trim();
-    payload.rcon_port = parseInt(document.getElementById('rconPortPalworld').value, 10) || 25575;
-    payload.rcon_password = document.getElementById('rconPasswordPalworld').value;
+    const apiHost = document.getElementById('rconHostPalworld').value.trim();
+    payload.rcon_host = apiHost || null;
+    payload.rcon_port = null;
+    payload.rcon_password = null;
   }
   return payload;
 }
@@ -1685,8 +1644,6 @@ async function loadJobIntoForm(job) {
     document.getElementById('intervalUnitPalworld').value = job.interval_unit || 'minutes';
     document.getElementById('retentionDaysPalworld').value = job.retention_days || 7;
     document.getElementById('rconHostPalworld').value = job.rcon_host || '';
-    document.getElementById('rconPortPalworld').value = job.rcon_port || 25575;
-    document.getElementById('rconPasswordPalworld').value = job.rcon_password || '';
   } else {
     await refreshMapSelects(true, { mapSelect: job.map || '' });
     document.getElementById('jobName').value = job.name || '';

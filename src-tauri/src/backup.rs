@@ -1,6 +1,7 @@
 use crate::app_data::AppData;
 use crate::job::Job;
-use crate::palworld_rcon;
+use crate::palworld_rest;
+use crate::server_ini;
 use crate::validation;
 use chrono::Datelike;
 use anyhow::{Context, Result};
@@ -1006,24 +1007,13 @@ fn rename_temp_to_backup(temp_path: &Path, backup_path: &Path) -> Result<()> {
 pub async fn create_palworld_backup(job: &Job, app_data: &AppData) -> Result<u64> {
     log::info!("Starting Palworld backup for job: {}", job.name);
 
-    let host = job
-        .rcon_host
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Palworld backup requires RCON host"))?
-        .trim()
-        .to_string();
-    let port = job
-        .rcon_port
-        .ok_or_else(|| anyhow::anyhow!("Palworld backup requires RCON port"))?;
-    let password = job
-        .rcon_password
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Palworld backup requires RCON password"))?
-        .clone();
+    let config_dir = validation::derive_palworld_config_dir(&job.root_dir);
+    let rest_settings = server_ini::read_palworld_rest_settings(&config_dir)?;
+    let host_override = job.rcon_host.as_deref();
 
-    tokio::task::spawn_blocking(move || palworld_rcon::send_save(&host, port, &password))
+    palworld_rest::send_save(&rest_settings, host_override)
         .await
-        .context("Palworld RCON task failed")??;
+        .context("Palworld REST save failed")?;
 
     log::info!("Waiting 3 seconds for Palworld save to flush to disk...");
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
@@ -1246,6 +1236,43 @@ fn add_single_file_to_zip(
 
 pub async fn create_backup(job: &Job, app_data: &AppData) -> Result<u64> {
     log::info!("Starting backup for job: {}", job.name);
+
+    let config_dir = validation::derive_config_dir(&job.root_dir);
+    match server_ini::read_ark_rcon_settings(&config_dir) {
+        Ok(rcon) if rcon.rcon_enabled => {
+            if let (Some(port), Some(password)) = (rcon.rcon_port, rcon.admin_password) {
+                log::info!("RCON: sending SaveWorld before ARK backup on 127.0.0.1:{}", port);
+                let password_clone = password.clone();
+                tokio::task::spawn_blocking(move || {
+                    run_rcon_commands(
+                        "127.0.0.1".to_string(),
+                        port,
+                        password_clone,
+                        vec!["SaveWorld"],
+                    )
+                })
+                .await
+                .context("ARK SaveWorld RCON task failed")??;
+                log::info!("Waiting 3 seconds for ARK save to flush to disk...");
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            } else {
+                log::warn!(
+                    "RCON is enabled in GameUserSettings.ini but RCONPort or ServerAdminPassword is missing; skipping SaveWorld"
+                );
+            }
+        }
+        Ok(_) => {
+            log::warn!(
+                "RCON is disabled in GameUserSettings.ini; proceeding with ARK backup without SaveWorld"
+            );
+        }
+        Err(e) => {
+            log::warn!(
+                "Could not read ARK RCON settings from GameUserSettings.ini ({}); proceeding without SaveWorld",
+                e
+            );
+        }
+    }
 
     let maps = app_data.get_config()?.ark_maps();
     let map = job
