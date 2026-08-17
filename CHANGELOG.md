@@ -4,6 +4,20 @@ All notable changes to ARKADE Manager are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.0] - 2026-08-17
+
+### Changed
+
+- **Project layout** — Rust backup/commands split into modules; frontend JS/CSS split by feature.
+- **Palworld REST errors** — backup failure dialog now includes the real REST save cause (timeout, connection refused, auth, HTTP status) instead of a generic wrapper.
+
+### Fixed
+
+- **Plugin Manager** — source folder path label updates after Browse Source.
+- **Palworld / plugin UI** — removed leftover RCON field IDs, debug logging, and `onclick` globals.
+
+---
+
 ## [2.4.6] - 2026-08-17
 
 ### Changed
@@ -153,6 +167,7 @@ Internal build. No user-facing changes recorded.
 - Application migrated to Tauri v2 (Rust backend + web frontend).
 - ARK ASA backup jobs, scheduling, monthly archive, logs.
 
+[2.5.0]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.5.0
 [2.4.6]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.6
 [2.4.5]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.5
 [2.4.2]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.2
