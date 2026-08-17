@@ -4,6 +4,14 @@ All notable changes to ARKADE Manager are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.3] - 2026-08-17
+
+### Fixed
+
+- **Palworld REST save timeout** — stop waiting for the socket to close after `POST /v1/api/save`. Palworld often returns HTTP 200 and keeps the connection open, which previously caused a false timeout. Reply timeout increased to 90s for large worlds.
+
+---
+
 ## [2.5.2] - 2026-08-17
 
 ### Fixed
@@ -183,6 +191,7 @@ Internal build. No user-facing changes recorded.
 - Application migrated to Tauri v2 (Rust backend + web frontend).
 - ARK ASA backup jobs, scheduling, monthly archive, logs.
 
+[2.5.3]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.5.3
 [2.5.2]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.5.2
 [2.5.1]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.5.1
 [2.5.0]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.5.0

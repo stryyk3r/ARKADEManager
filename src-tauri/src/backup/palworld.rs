@@ -33,8 +33,8 @@ pub async fn create_palworld_backup(job: &Job, app_data: &AppData) -> Result<u64
 
     palworld_rest::send_save(&rest_settings, host_override).await?;
 
-    log::info!("Waiting 3 seconds for Palworld save to flush to disk...");
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    log::info!("Waiting 5 seconds for Palworld save to flush to disk...");
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
     let world_dir = validation::discover_palworld_world_dir(&job.root_dir)?;
     let config_dir = validation::derive_palworld_config_dir(&job.root_dir);
