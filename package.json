@@ -1,6 +1,6 @@
 {
   "name": "arkade-manager",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "ARKADE Manager - ARK Survival Ascended Server Management Tool",
   "type": "module",
   "scripts": {

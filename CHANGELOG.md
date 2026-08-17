@@ -4,6 +4,14 @@ All notable changes to ARKADE Manager are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.1] - 2026-08-17
+
+### Fixed
+
+- **Palworld INI parsing** — `RESTAPIEnabled` is no longer missed when an earlier `OptionSettings` value contains parentheses (for example a server description).
+
+---
+
 ## [2.5.0] - 2026-08-17
 
 ### Changed
@@ -167,6 +175,7 @@ Internal build. No user-facing changes recorded.
 - Application migrated to Tauri v2 (Rust backend + web frontend).
 - ARK ASA backup jobs, scheduling, monthly archive, logs.
 
+[2.5.1]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.5.1
 [2.5.0]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.5.0
 [2.4.6]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.6
 [2.4.5]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.5

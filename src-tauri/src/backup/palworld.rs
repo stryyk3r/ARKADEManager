@@ -20,7 +20,15 @@ pub async fn create_palworld_backup(job: &Job, app_data: &AppData) -> Result<u64
     log::info!("Starting Palworld backup for job: {}", job.name);
 
     let config_dir = validation::derive_palworld_config_dir(&job.root_dir);
+    let ini_path = config_dir.join("PalWorldSettings.ini");
     let rest_settings = server_ini::read_palworld_rest_settings(&config_dir)?;
+    log::info!(
+        "Palworld REST settings from {}: enabled={}, port={}, admin_password_set={}",
+        ini_path.display(),
+        rest_settings.rest_api_enabled,
+        rest_settings.rest_api_port,
+        !rest_settings.admin_password.trim().is_empty()
+    );
     let host_override = job.rcon_host.as_deref(); // optional REST API host; defaults to 127.0.0.1
 
     palworld_rest::send_save(&rest_settings, host_override).await?;

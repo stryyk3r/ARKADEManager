@@ -36,16 +36,36 @@ fn parse_bool(value: &str) -> bool {
     )
 }
 
+/// Find the matching close paren for `OptionSettings=(...)`, ignoring parens inside quotes.
+fn option_settings_inner(text: &str) -> Option<&str> {
+    let marker = "OptionSettings=(";
+    let start = text.find(marker)? + marker.len();
+    let bytes = text.as_bytes();
+    let mut in_quotes = false;
+    let mut depth = 0i32;
+
+    for (i, &b) in bytes[start..].iter().enumerate() {
+        match b {
+            b'"' => in_quotes = !in_quotes,
+            b'(' if !in_quotes => depth += 1,
+            b')' if !in_quotes => {
+                if depth == 0 {
+                    return Some(&text[start..start + i]);
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
 /// Parse Palworld `OptionSettings=(Key=Value,...)` from PalWorldSettings.ini text.
 pub fn parse_palworld_option_settings(text: &str) -> HashMap<String, String> {
-    let Some(start) = text.find("OptionSettings=(") else {
+    let Some(inner) = option_settings_inner(text) else {
         return HashMap::new();
     };
-    let inner_start = start + "OptionSettings=(".len();
-    let Some(rel_end) = text[inner_start..].find(')') else {
-        return HashMap::new();
-    };
-    let inner = &text[inner_start..inner_start + rel_end];
 
     let mut result = HashMap::new();
     let mut key = String::new();
@@ -95,22 +115,37 @@ pub fn read_palworld_rest_settings(config_dir: &Path) -> Result<PalworldRestSett
         .with_context(|| format!("Invalid PalWorldSettings.ini at {}", ini_path.display()))
 }
 
+fn option_value_after_key(text: &str, key: &str) -> Option<String> {
+    let marker = format!("{key}=");
+    let start = text.find(&marker)? + marker.len();
+    let rest = &text[start..];
+    let end = rest
+        .find([',', ')', '\r', '\n'])
+        .unwrap_or(rest.len());
+    Some(rest[..end].trim().to_string())
+}
+
 pub fn parse_palworld_rest_settings_from_text(text: &str) -> Result<PalworldRestSettings> {
     let options = parse_palworld_option_settings(text);
 
     let rest_api_enabled = options
         .get("RESTAPIEnabled")
         .map(|v| parse_bool(v))
+        .or_else(|| option_value_after_key(text, "RESTAPIEnabled").map(|v| parse_bool(&v)))
         .unwrap_or(false);
 
     let rest_api_port = options
         .get("RESTAPIPort")
         .and_then(|v| strip_quotes(v).parse::<u16>().ok())
+        .or_else(|| {
+            option_value_after_key(text, "RESTAPIPort").and_then(|v| strip_quotes(&v).parse::<u16>().ok())
+        })
         .unwrap_or(8212);
 
     let admin_password = options
         .get("AdminPassword")
         .map(|v| strip_quotes(v))
+        .or_else(|| option_value_after_key(text, "AdminPassword").map(|v| strip_quotes(&v)))
         .unwrap_or_default();
 
     Ok(PalworldRestSettings {
@@ -185,6 +220,28 @@ mod tests {
     fn parses_palworld_option_settings() {
         let text = r#"[/Script/Pal.PalGameWorldSettings]
 OptionSettings=(Difficulty=None,RESTAPIEnabled=True,RESTAPIPort=8212,AdminPassword="secret",RCONEnabled=True)
+"#;
+        let settings = parse_palworld_rest_settings_from_text(text).unwrap();
+        assert!(settings.rest_api_enabled);
+        assert_eq!(settings.rest_api_port, 8212);
+        assert_eq!(settings.admin_password, "secret");
+    }
+
+    #[test]
+    fn parses_rest_settings_when_description_contains_parentheses() {
+        let text = r#"[/Script/Pal.PalGameWorldSettings]
+OptionSettings=(ServerDescription="Join us (discord)",DeathPenalty=All,RCONEnabled=True,RCONPort=37038,RESTAPIEnabled=True,RESTAPIPort=8212,AdminPassword="secret",bIsUseBackupSaveData=True,Region="")
+"#;
+        let settings = parse_palworld_rest_settings_from_text(text).unwrap();
+        assert!(settings.rest_api_enabled);
+        assert_eq!(settings.rest_api_port, 8212);
+        assert_eq!(settings.admin_password, "secret");
+    }
+
+    #[test]
+    fn parses_rest_settings_via_fallback_when_quotes_are_unbalanced() {
+        let text = r#"[/Script/Pal.PalGameWorldSettings]
+OptionSettings=(ServerDescription="broken (no close quote,RESTAPIEnabled=True,RESTAPIPort=8212,AdminPassword="secret")
 "#;
         let settings = parse_palworld_rest_settings_from_text(text).unwrap();
         assert!(settings.rest_api_enabled);
