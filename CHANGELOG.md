@@ -4,6 +4,14 @@ All notable changes to ARKADE Manager are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.2] - 2026-08-17
+
+### Fixed
+
+- **Palworld REST save** — send a raw HTTP/1.1 `POST /v1/api/save` with `Content-Length: 0` instead of `reqwest`, which Palworld's REST listener can reject.
+
+---
+
 ## [2.5.1] - 2026-08-17
 
 ### Fixed
@@ -175,6 +183,7 @@ Internal build. No user-facing changes recorded.
 - Application migrated to Tauri v2 (Rust backend + web frontend).
 - ARK ASA backup jobs, scheduling, monthly archive, logs.
 
+[2.5.2]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.5.2
 [2.5.1]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.5.1
 [2.5.0]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.5.0
 [2.4.6]: https://github.com/stryyk3r/ARKADEManager/releases/tag/v2.4.6
