@@ -1,0 +1,373 @@
+/* ── Tables ── */
+
+.table-wrapper {
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.jobs-table th {
+  background: var(--bg-elevated);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-default);
+  white-space: nowrap;
+}
+
+.jobs-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.jobs-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.jobs-table tbody tr {
+  transition: background 0.12s;
+}
+
+.jobs-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.jobs-table tr.hidden-row {
+  display: none;
+}
+
+.cell-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cell-name-primary {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cell-name-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'Courier New', monospace;
+}
+
+.cell-metric {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-metric-good { color: var(--green); }
+.cell-metric-warn { color: var(--orange); }
+.cell-metric-bad { color: var(--red); }
+.cell-metric-muted { color: var(--text-muted); }
+
+.cell-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* ── Jobs panel / grouped table ── */
+
+.jobs-panel {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  overflow: visible;
+}
+
+.jobs-table-unified thead th {
+  background: var(--surface-muted);
+  padding: 12px 16px;
+}
+
+.jobs-table-unified tbody td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+tr.group-header-row td {
+  background: var(--surface-subtle);
+  padding: 14px 16px !important;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.group-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.group-accent {
+  width: 3px;
+  height: 28px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.group-accent-teal { background: var(--cyan); }
+.group-accent-yellow { background: var(--yellow); }
+.group-accent-green { background: var(--green); }
+.group-accent-blue { background: #4299e1; }
+
+.group-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.group-icon-teal { background: rgba(var(--cyan-rgb), 0.15); color: var(--cyan); }
+.group-icon-yellow { background: var(--yellow-muted); color: var(--yellow); }
+.group-icon-green { background: var(--green-muted); color: var(--green); }
+.group-icon-blue { background: rgba(66, 153, 225, 0.15); color: #4299e1; }
+
+.group-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.group-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.group-size {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.online-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--green);
+  font-weight: 500;
+}
+
+.online-pill .status-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.job-row-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.job-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.job-status-dot.online { background: var(--green); box-shadow: none; }
+.job-status-dot.paused { background: var(--yellow); }
+.job-status-dot.error { background: var(--red); }
+.job-status-dot.running { background: var(--cyan); box-shadow: none; }
+
+.job-name-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.job-name-primary {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.job-name-primary.running {
+  color: var(--cyan);
+}
+
+.job-name-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.job-name-sub.progress {
+  color: var(--cyan);
+}
+
+.settings-panel {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  padding: 8px;
+  max-width: 720px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.settings-section {
+  margin-top: 16px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  padding: 18px 16px;
+  max-width: 960px;
+}
+
+.settings-section-header {
+  margin-bottom: 14px;
+}
+
+.maps-settings-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.maps-settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.maps-settings-table th,
+.maps-settings-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.maps-settings-table th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--surface-control);
+}
+
+.maps-settings-table tr:last-child td {
+  border-bottom: none;
+}
+
+.maps-settings-table input {
+  width: 100%;
+  min-width: 90px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-control);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font);
+}
+
+.maps-settings-table input:focus {
+  outline: none;
+  border-color: var(--control-focus-border);
+}
+
+.maps-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.settings-message {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.settings-message.is-error {
+  color: var(--red);
+}
+
+.settings-message.is-success {
+  color: var(--green);
+}
+
+.server-root-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.server-root-settings .form-group {
+  margin: 0;
+}
+
+.maps-settings-remove {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+

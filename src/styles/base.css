@@ -1,0 +1,163 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-base: #020F22;
+  --bg-surface: #081225;
+  --bg-elevated: #050B17;
+  --bg-card: rgba(5, 11, 23, 0.9);
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-input: #050B17;
+  --bg-sidebar: #0d1117;
+
+  --surface-control: rgba(10, 20, 38, 0.92);
+  --surface-secondary: rgba(5, 11, 23, 0.4);
+  --surface-subtle: rgba(255, 255, 255, 0.02);
+  --surface-muted: rgba(255, 255, 255, 0.03);
+  --surface-hover: rgba(255, 255, 255, 0.05);
+  --surface-hover-strong: rgba(255, 255, 255, 0.04);
+  --surface-active: rgba(255, 255, 255, 0.06);
+  --surface-active-hover: rgba(255, 255, 255, 0.09);
+  --surface-inset-top: rgba(255, 255, 255, 0.05);
+  --surface-dropdown: rgba(5, 11, 23, 0.95);
+  --surface-metric: #060b19;
+  --surface-brand: rgba(255, 255, 255, 0.04);
+  --overlay: rgba(0, 0, 0, 0.7);
+
+  --text-primary: #F2F0F8;
+  --text-heading: #A8EAEA;
+  --text-secondary: #8A85AB;
+  --text-muted: #8A85AB;
+  --text-emphasis: #ffffff;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --control-hover-border: rgba(255, 255, 255, 0.14);
+  --control-focus-border: rgba(255, 255, 255, 0.16);
+
+  --select-item-hover: rgba(var(--magenta-rgb), 0.25);
+  --chevron-muted: #B8B4D4;
+
+  --cyan: #1FE3F5;
+  --cyan-rgb: 31, 227, 245;
+  --cyan-hover: #1ad0e0;
+  --cyan-muted: rgba(31, 227, 245, 0.18);
+
+  --magenta: #DD3DEE;
+  --magenta-rgb: 221, 61, 238;
+  --magenta-muted: rgba(221, 61, 238, 0.15);
+
+  --green: #34d399;
+  --green-hover: #10b981;
+  --green-muted: rgba(52, 211, 153, 0.15);
+
+  --red: #f87171;
+  --red-hover: #ef4444;
+  --red-muted: rgba(248, 113, 113, 0.14);
+
+  --yellow: #fbbf24;
+  --yellow-muted: rgba(251, 191, 36, 0.14);
+
+  --blue: var(--cyan);
+  --blue-hover: var(--cyan-hover);
+  --blue-muted: var(--cyan-muted);
+  --purple: var(--magenta);
+  --purple-hover: #c42bd4;
+  --purple-muted: var(--magenta-muted);
+  --orange: var(--yellow);
+  --orange-muted: var(--yellow-muted);
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.28);
+
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-base: #eef1f6;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f8f9fb;
+  --bg-card: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-input: #ffffff;
+  --bg-sidebar: #ffffff;
+
+  --surface-control: #ffffff;
+  --surface-secondary: #f3f4f6;
+  --surface-subtle: rgba(0, 0, 0, 0.02);
+  --surface-muted: #f8f9fb;
+  --surface-hover: rgba(0, 0, 0, 0.04);
+  --surface-hover-strong: rgba(0, 0, 0, 0.04);
+  --surface-active: rgba(0, 0, 0, 0.06);
+  --surface-active-hover: rgba(0, 0, 0, 0.08);
+  --surface-inset-top: rgba(255, 255, 255, 0.95);
+  --surface-dropdown: #ffffff;
+  --surface-metric: #ffffff;
+  --surface-brand: rgba(0, 0, 0, 0.04);
+  --overlay: rgba(15, 23, 42, 0.45);
+
+  --text-primary: #111827;
+  --text-heading: #0e7490;
+  --text-secondary: #5c6578;
+  --text-muted: #8b95a8;
+  --text-emphasis: #111827;
+
+  --border-subtle: #e4e8ef;
+  --border-default: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
+  --control-hover-border: rgba(0, 0, 0, 0.14);
+  --control-focus-border: rgba(0, 0, 0, 0.16);
+
+  --select-item-hover: rgba(var(--magenta-rgb), 0.12);
+  --chevron-muted: #8b95a8;
+
+  --cyan: #0e7490;
+  --cyan-rgb: 14, 116, 144;
+  --cyan-muted: rgba(14, 116, 144, 0.12);
+
+  --magenta: #a21caf;
+  --magenta-rgb: 162, 28, 175;
+  --magenta-muted: rgba(162, 28, 175, 0.1);
+
+  --green: #059669;
+  --green-muted: rgba(5, 150, 105, 0.12);
+
+  --red-muted: rgba(248, 113, 113, 0.12);
+  --yellow-muted: rgba(251, 191, 36, 0.12);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+html {
+  color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+

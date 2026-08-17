@@ -6,6 +6,7 @@ logs/
 node_modules/
 target/
 dist/
+dist_backup/
 
 # IDE
 .vscode/

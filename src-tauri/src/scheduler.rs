@@ -269,7 +269,7 @@ impl Scheduler {
 
                         let payload = BackupFailedPayload {
                             job_name: job_clone.name.clone(),
-                            error: format!("{}", e),
+                            error: format!("{:#}", e),
                         };
                         let app_handle_for_emit = app_handle_clone.clone();
                         app_handle_clone.run_on_main_thread(move || {
@@ -340,8 +340,8 @@ impl Clone for Scheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::job::JobInput;
     use chrono::Utc;
+    use std::time::Duration;
 
     #[test]
     fn test_dedup_logic() {

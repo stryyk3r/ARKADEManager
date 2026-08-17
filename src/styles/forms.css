@@ -1,0 +1,182 @@
+/* ── Forms ── */
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.form-group input:not([type="radio"]):not([type="checkbox"]),
+.form-group select:not(.admin-select-native) {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-control);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font);
+  outline: none;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  box-shadow: inset 0 1px 0 var(--surface-inset-top);
+}
+
+.form-group input:not([type="radio"]):not([type="checkbox"]):hover,
+.form-group select:not(.admin-select-native):hover {
+  border-color: var(--control-hover-border);
+  background: var(--surface-hover-strong);
+}
+
+.form-group input:not([type="radio"]):not([type="checkbox"]):focus,
+.form-group select:not(.admin-select-native):focus,
+.form-group input:not([type="radio"]):not([type="checkbox"]):focus-visible,
+.form-group select:not(.admin-select-native):focus-visible {
+  border-color: var(--control-focus-border);
+  outline: none;
+  box-shadow: inset 0 1px 0 var(--surface-inset-top);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.form-row .form-group {
+  min-width: 0;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-item input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--cyan);
+}
+
+.error-message {
+  color: var(--red);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.interval-input {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  width: 100%;
+}
+
+.form-group .interval-input input[type="number"] {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+}
+
+.form-group .interval-input select:not(.admin-select-native) {
+  flex: 0 0 130px;
+  width: 130px;
+  min-width: 130px;
+  max-width: 130px;
+}
+
+.interval-input .admin-select {
+  flex: 0 0 130px;
+  width: 130px;
+  min-width: 130px;
+  max-width: 130px;
+}
+
+.input-with-btn {
+  display: flex;
+  gap: 8px;
+}
+
+.input-with-btn input {
+  flex: 1;
+}
+
+/* ── Job Menu ── */
+
+.job-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.job-menu-button {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 5px 10px;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  min-width: 32px;
+  justify-content: center;
+}
+
+.job-menu-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.job-menu-dropdown {
+  display: none;
+  position: fixed;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  min-width: 160px;
+  z-index: 2000;
+  overflow: hidden;
+}
+
+.job-menu-dropdown.show {
+  display: block;
+}
+
+.job-menu-item {
+  display: block;
+  width: 100%;
+  padding: 9px 14px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.job-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.job-menu-item.danger {
+  color: var(--red);
+}
+
+.job-menu-item.danger:hover {
+  background: var(--red-muted);
+}
+

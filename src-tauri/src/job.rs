@@ -33,11 +33,11 @@ pub struct Job {
     pub next_run_at: Option<String>,
     pub last_file_size: Option<u64>,
     pub last_error: Option<String>,
-    /// Minecraft only: RCON host (IP or hostname) for save-off/save-on
+    /// Minecraft RCON host, or Palworld REST API host override.
     pub rcon_host: Option<String>,
-    /// Minecraft only: RCON port
+    /// Minecraft RCON port.
     pub rcon_port: Option<u16>,
-    /// Minecraft only: RCON password
+    /// Minecraft RCON password.
     pub rcon_password: Option<String>,
 }
 
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_job_update_after_run() {
-        let mut input = JobInput {
+        let input = JobInput {
             id: None,
             job_type: "ark".to_string(),
             monthly_cluster: "ASA Legacy".to_string(),

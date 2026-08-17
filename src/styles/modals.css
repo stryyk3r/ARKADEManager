@@ -1,0 +1,221 @@
+/* ── Modals ── */
+
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay.show {
+  display: flex;
+}
+
+.modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  width: 90%;
+  max-width: 620px;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.modal-close {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+}
+
+.modal-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: 24px;
+  flex: 1;
+}
+
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--bg-elevated);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.wizard-step {
+  display: none;
+}
+
+.wizard-step.active {
+  display: block;
+}
+
+.step-indicator {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.step-dot {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 2px solid var(--border-default);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.step-dot.active {
+  background: var(--cyan);
+  border-color: var(--cyan);
+  color: var(--bg-base);
+}
+
+.step-dot.completed {
+  background: var(--green-muted);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.step-connector {
+  width: 36px;
+  height: 2px;
+  background: var(--border-default);
+  flex-shrink: 0;
+}
+
+.step-connector.completed {
+  background: var(--green);
+}
+
+.step-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.step-description {
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.form-group label.backup-type-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 0;
+  font-weight: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+.backup-type-option {
+  flex: 1;
+  min-width: 140px;
+  cursor: pointer;
+  border: 2px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  background: var(--bg-elevated);
+  user-select: none;
+}
+
+.backup-type-option input[type="radio"] {
+  width: auto;
+  margin: 0 0 12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  accent-color: var(--cyan);
+  flex-shrink: 0;
+}
+
+.backup-type-option .step-description {
+  margin: 4px 0 0;
+}
+
+.backup-type-option:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.backup-type-option:has(input:checked) {
+  border-color: var(--cyan);
+  background: var(--cyan-muted);
+}
+
+/* ── Hidden job form ── */
+
+#jobFormContainer {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  position: absolute !important;
+  left: -9999px !important;
+}
+
+#jobFormContainer.show {
+  display: block !important;
+  visibility: visible !important;
+  height: auto !important;
+  overflow: visible !important;
+  opacity: 1 !important;
+  position: relative !important;
+  left: auto !important;
+}
+

@@ -25,6 +25,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.4.4] - 2026-07-27
+
+Internal build. No user-facing changes recorded.
+
+---
+
+## [2.4.3] - 2026-07-20
+
+Internal build. No user-facing changes recorded.
+
+---
+
 ## [2.4.2] - 2026-07-13
 
 ### Fixed

@@ -1,84 +1,71 @@
 # Quick Start Guide
 
-## First Time Setup
+## First-time setup
 
-1. **Install Prerequisites**:
-   - Install Rust: https://rustup.rs/
-   - Install Node.js (v18+): https://nodejs.org/
-   - Install Tauri CLI: `npm install -g @tauri-apps/cli@latest`
+1. Install [Rust](https://rustup.rs/) and [Node.js 18+](https://nodejs.org/)
+2. From the repo root:
 
-2. **Install Dependencies**:
    ```bash
    npm install
-   ```
-
-3. **Create Icon File** (required for building):
-   - Create or obtain a Windows `.ico` file
-   - Place it at: `src-tauri/icons/icon.ico`
-   - Recommended: 256x256 with multiple embedded sizes
-
-4. **Run in Development**:
-   ```bash
    npm run tauri dev
    ```
 
-## Creating Your First Backup Job
+3. For release builds, ensure `src-tauri/icons/icon.ico` exists.
 
-1. Open the **Backups** tab
-2. Click **Browse** next to "Server Root Directory"
-   - Select your ARK ASA server root (e.g., `C:\arkservers\asaservers\omega-forglar`)
-3. Click **Browse** next to "Destination Directory"
-   - Select where backups should be saved
-4. Select a **Map** from the dropdown
-5. Check the **Include** options you want:
-   - Player/Tribe saves
-   - Map save
-   - Server INI files
-   - Plugin config files
-6. Set **Interval** (e.g., 6 hours)
-7. Set **Retention** (e.g., 7 days)
-8. Check **Enabled** to activate the job
-9. Enter a **Job Name** and click **Add Job**
+## Creating a backup job
 
-The job will appear in the table and will run automatically according to its schedule.
+Use the **Add Job** wizard on the Backups tab.
 
-## Manual Backup
+### ARK (ASA / ASE)
 
-1. Select a job from the table
-2. Click **Run Now** to execute immediately
+1. Choose **ARK** as the backup type.
+2. Set **Server Root** and **Destination** (Browse buttons).
+3. Pick a **Map** and include options (saves, map, INI files, plugin configs).
+4. Set interval, retention, monthly cluster, and job name.
+5. Save — the scheduler runs enabled jobs automatically.
 
-## Monthly Archives
+ARK backups call `SaveWorld` over RCON when `RCONEnabled=True` in `GameUserSettings.ini`.
 
-- Click **Monthly Status** to preview which backups would be archived
-- Click **Run Monthly Backup** to archive the oldest 2 backups from the current month
-- Archives are stored in: `C:\arkade\Arkade Shared Global\FOTM Backups\{YYYY-MM}\ASA\`
+### Minecraft
+
+1. Choose **Minecraft** as the backup type.
+2. Set server root (folder containing `world` and `config`).
+3. Optionally set RCON host/port/password for save-off/flush before backup.
+4. Backups use 7-Zip when installed; otherwise built-in ZIP.
+
+### Palworld
+
+1. Choose **Palworld** as the backup type.
+2. Set server root (SteamCMD install folder).
+3. Ensure `PalWorldSettings.ini` has `RESTAPIEnabled=True`, `AdminPassword`, and `RESTAPIPort`.
+4. Optional **API Host** override if REST is not on localhost.
+
+Palworld backups trigger a REST save before zipping world and config files.
+
+## Other tabs
+
+- **Logs** — refresh or open the logs folder
+- **Plugin Manager** — copy plugins from a source path to selected servers
+- **Plugin Toggle** — rename plugin folders to/from `_OFF`
+- **Data Lookup** — search ARK save files by EOS ID or tribe ID
+- **Settings** — theme, ASA/Minecraft/Palworld server roots, ARK maps, monthly archive path
+
+## Monthly archives
+
+- **Monthly Status** — see which jobs have met their two monthly copies
+- **Run Monthly Backup** — copy the first two backups of the current month per job into the configured FOTM folder
+
+Default destination: `C:\arkade\Arkade Shared Global\FOTM Backups\{YYYY-MM-MMMMM}\`
 
 ## Troubleshooting
 
-**App won't start:**
-- Check that Rust and Node.js are properly installed
-- Run `npm install` to ensure dependencies are installed
-- Check `src-tauri/icons/icon.ico` exists (for builds)
+| Issue | Check |
+|-------|--------|
+| App won't start | `npm install`; Rust/Node on PATH |
+| Backup fails | Logs tab; verify paths and game-specific requirements (RCON/REST INI) |
+| Jobs not running | Job enabled; scheduler status in sidebar; `next_run_at` in the past |
+| Palworld save fails | `RESTAPIEnabled=True` and valid admin password in `PalWorldSettings.ini` |
 
-**Backup fails:**
-- Verify server root directory exists
-- Check that required directories exist (saves, config, plugins)
-- Check the Logs tab for detailed error messages
-- Ensure destination directory is writable
+## Data location
 
-**Jobs not running:**
-- Verify job is **Enabled**
-- Check that `next_run_at` is in the past
-- Review scheduler status in the Status area
-- Check logs for errors
-
-## Data Location
-
-All application data is stored in:
-- Windows: `%LOCALAPPDATA%\arkade\manager\`
-
-Files:
-- `config.json` - Settings
-- `backup_jobs.json` - All jobs
-- `logs/arkade_manager.log` - Application logs
-
+`%LOCALAPPDATA%\arkade\manager\` — `config.json`, `backup_jobs.json`, `logs/`

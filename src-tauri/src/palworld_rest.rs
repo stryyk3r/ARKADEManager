@@ -1,5 +1,5 @@
 use crate::server_ini::PalworldRestSettings;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use std::time::Duration;
 
 fn is_loopback_host(host: &str) -> bool {
@@ -13,6 +13,17 @@ fn format_rest_error(host: &str, port: u16, detail: &str) -> String {
          Confirm RESTAPIEnabled=True and AdminPassword are set in PalWorldSettings.ini. \
          If ARKADE Manager runs on the same machine as the server, use 127.0.0.1 as the API host."
     )
+}
+
+fn describe_reqwest_error(err: &reqwest::Error) -> String {
+    if err.is_timeout() {
+        "timed out after 15s (server not running, RESTAPIEnabled=False until restart, or wrong port)"
+            .to_string()
+    } else if err.is_connect() {
+        format!("connection refused ({err})")
+    } else {
+        err.to_string()
+    }
 }
 
 async fn post_save(host: &str, port: u16, password: &str) -> Result<()> {
@@ -30,7 +41,7 @@ async fn post_save(host: &str, port: u16, password: &str) -> Result<()> {
         .header("Accept", "application/json")
         .send()
         .await
-        .with_context(|| format_rest_error(host, port, "connection failed"))?;
+        .map_err(|e| anyhow!(format_rest_error(host, port, &describe_reqwest_error(&e))))?;
 
     let status = response.status();
     if status.as_u16() == 401 || status.as_u16() == 403 {
