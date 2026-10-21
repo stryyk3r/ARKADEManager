@@ -120,15 +120,8 @@ export async function initApp() {
     showBackupProgress(jobName, percent);
   });
 
-  await listen('backup_failed', (event) => {
+  await listen('backup_failed', () => {
     hideBackupProgress();
-    const p = event.payload || {};
-    const name = p.job_name || 'Backup';
-    const err = p.error || 'Unknown error';
-    const lower = String(err).toLowerCase();
-    const isWarning = lower.includes('completed with warnings') || lower.includes('warning');
-    const header = isWarning ? 'Backup warning' : 'Backup failed';
-    alert(`${header}: ${name}\n\n${err}\n\nThe backup will not run again until the next scheduled time.`);
   });
 
   await updateStatus();

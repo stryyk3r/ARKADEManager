@@ -15,6 +15,7 @@ use super::monthly::maybe_copy_backup_to_monthly;
 use super::retention::cleanup_old_backups;
 use super::shared::{
     add_single_file_to_zip, is_disk_full_error, rename_temp_to_backup, verify_zip_integrity,
+    TempFileGuard,
 };
 pub async fn create_palworld_backup(job: &Job, app_data: &AppData) -> Result<u64> {
     log::info!("Starting Palworld backup for job: {}", job.name);
@@ -67,7 +68,7 @@ pub async fn create_palworld_backup(job: &Job, app_data: &AppData) -> Result<u64
                 );
             }
 
-            cleanup_old_backups(&job.destination_dir, job.retention_days)?;
+            cleanup_old_backups(&job.destination_dir, &job.name, job.retention_days)?;
             Ok(file_size)
         }
         Err(e) if is_disk_full_error(&e) => {
@@ -75,7 +76,7 @@ pub async fn create_palworld_backup(job: &Job, app_data: &AppData) -> Result<u64
                 "Palworld backup failed due to insufficient disk space. Cleaning up old backups and retrying..."
             );
 
-            cleanup_old_backups(&job.destination_dir, job.retention_days)
+            cleanup_old_backups(&job.destination_dir, &job.name, job.retention_days)
                 .context("Failed to cleanup old Palworld backups")?;
 
             log::info!("Retrying Palworld backup after cleanup...");
@@ -98,7 +99,7 @@ pub async fn create_palworld_backup(job: &Job, app_data: &AppData) -> Result<u64
                         );
                     }
 
-                    cleanup_old_backups(&job.destination_dir, job.retention_days)?;
+                    cleanup_old_backups(&job.destination_dir, &job.name, job.retention_days)?;
                     Ok(file_size)
                 }
                 Err(retry_err) => {
@@ -123,6 +124,7 @@ async fn attempt_palworld_backup(
     world_dir: &Path,
     config_dir: &Path,
 ) -> Result<u64> {
+    let _temp_guard = TempFileGuard::new(temp_path);
     let file = fs::File::create(temp_path)
         .with_context(|| format!("Failed to create backup file: {}", temp_path.display()))?;
     let mut zip = ZipWriter::new(file);

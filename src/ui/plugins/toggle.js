@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { state } from '../../state.js';
+import { escapeHtml } from '../../utils/dom.js';
 
 export function initAdminSelect(selectEl) {
   if (!selectEl || selectEl.dataset.adminSelectWired === 'true') return;
@@ -183,7 +184,7 @@ export async function loadPluginFolders(serverRoot) {
   } catch (e) {
     console.error('Failed to load plugin folders:', e);
     const container = document.getElementById('pluginToggleFoldersList');
-    container.innerHTML = `<div class="empty-state" style="color: var(--error-color);">Error: ${e}</div>`;
+    container.innerHTML = `<div class="empty-state" style="color: var(--error-color);">Error: ${escapeHtml(String(e))}</div>`;
   }
 }
 

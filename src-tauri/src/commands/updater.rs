@@ -1,3 +1,5 @@
+use crate::state::AppState;
+
 #[tauri::command]
 pub async fn get_app_version() -> Result<String, String> {
     Ok(env!("CARGO_PKG_VERSION").to_string())
@@ -92,24 +94,25 @@ pub async fn check_for_updates() -> Result<serde_json::Value, String> {
     }
 }
 
+/// Download the latest GitHub release's `*-setup.exe` and run it.
 #[tauri::command]
-pub async fn install_update() -> Result<String, String> {
+pub async fn install_update(state: tauri::State<'_, AppState>) -> Result<String, String> {
     use serde_json::Value;
     use std::fs;
     use std::io::Write;
     use std::process::Command;
 
+    // Installing exits the app; doing that mid-backup would abandon a half-written archive and could
+    // leave a Minecraft server with world saving turned off (save-off without save-on).
+    if state.scheduler.lock().await.is_backup_running() {
+        return Err("A backup is currently running. Wait for it to finish, then install the update.".to_string());
+    }
+
     log::info!("Starting update installation...");
 
     let client = reqwest::Client::new();
-    let response = client
-        .get("https://api.github.com/repos/stryyk3r/ARKADEManager/releases/latest")
-        .header("User-Agent", "ARKADE-Manager")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch release info: {}", e))?;
-
-    let release: Value = response
+    let release: Value = fetch(&client, RELEASES_API_URL, "release info")
+        .await?
         .json()
         .await
         .map_err(|e| format!("Failed to parse release info: {}", e))?;
@@ -118,42 +121,32 @@ pub async fn install_update() -> Result<String, String> {
         .get("assets")
         .and_then(|a| a.as_array())
         .ok_or_else(|| "No assets found in release".to_string())?;
-
     let installer_url = assets
         .iter()
         .find_map(|asset| {
-            let name = asset.get("browser_download_url")?.as_str()?;
-            if name.ends_with("-setup.exe") {
-                Some(name)
-            } else {
-                None
-            }
+            let name = asset.get("name")?.as_str()?;
+            let url = asset.get("browser_download_url")?.as_str()?;
+            name.ends_with("-setup.exe").then(|| url.to_string())
         })
         .ok_or_else(|| "No installer found in release assets".to_string())?;
 
     log::info!("Downloading installer from: {}", installer_url);
-
-    let installer_response = client
-        .get(installer_url)
-        .header("User-Agent", "ARKADE-Manager")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to download installer: {}", e))?;
-
-    let temp_dir = std::env::temp_dir();
-    let installer_path = temp_dir.join("ARKADE_Manager_Update.exe");
-
-    let mut file = fs::File::create(&installer_path)
-        .map_err(|e| format!("Failed to create temp file: {}", e))?;
-
-    let bytes = installer_response
+    let bytes = fetch(&client, &installer_url, "installer")
+        .await?
         .bytes()
         .await
         .map_err(|e| format!("Failed to read installer data: {}", e))?;
 
+    // Unique name, created fresh: never reuse or overwrite a file another process placed in %TEMP%.
+    let installer_path = std::env::temp_dir()
+        .join(format!("ARKADE_Manager_Update_{}.exe", uuid::Uuid::new_v4()));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&installer_path)
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
     file.write_all(&bytes)
         .map_err(|e| format!("Failed to write installer: {}", e))?;
-
     drop(file);
 
     log::info!("Installer downloaded to: {}", installer_path.display());
@@ -167,4 +160,19 @@ pub async fn install_update() -> Result<String, String> {
     log::info!("Installer launched, exiting application...");
 
     std::process::exit(0);
+}
+
+const RELEASES_API_URL: &str = "https://api.github.com/repos/stryyk3r/ARKADEManager/releases/latest";
+
+async fn fetch(client: &reqwest::Client, url: &str, what: &str) -> Result<reqwest::Response, String> {
+    let response = client
+        .get(url)
+        .header("User-Agent", "ARKADE-Manager")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to download {}: {}", what, e))?;
+    if !response.status().is_success() {
+        return Err(format!("Failed to download {}: HTTP {}", what, response.status()));
+    }
+    Ok(response)
 }

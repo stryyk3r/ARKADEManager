@@ -276,6 +276,15 @@ pub async fn send_save(settings: &PalworldRestSettings, host_override: Option<&s
         .map(str::trim)
         .filter(|h| !h.is_empty())
         .unwrap_or("127.0.0.1");
+    // Jobs saved before host validation existed may hold anything; never put it into the request.
+    crate::validation::validate_host(primary_host).context("Palworld API host")?;
+
+    if !is_loopback_host(primary_host) {
+        // Palworld's REST API only speaks plain HTTP, so Basic auth sends AdminPassword unencrypted.
+        log::warn!(
+            "Palworld REST: sending AdminPassword unencrypted (plain HTTP) to remote host {primary_host}. Leave API Host blank when ARKADE Manager runs on the same machine as the server."
+        );
+    }
 
     log::info!("Palworld REST: sending save to {primary_host}:{port}");
 

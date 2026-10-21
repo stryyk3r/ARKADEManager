@@ -104,6 +104,12 @@ fn main() {
             let app_data = Arc::new(Mutex::new(AppData::new()?));
             let scheduler = Arc::new(Mutex::new(Scheduler::new(app.handle().clone())));
 
+            // Registered before the first tick so backup tasks can always reach the shared state.
+            app.manage(AppState {
+                app_data: app_data.clone(),
+                scheduler: scheduler.clone(),
+            });
+
             {
                 let scheduler_clone = scheduler.clone();
                 let app_data_clone = app_data.clone();
@@ -112,19 +118,15 @@ fn main() {
                         tokio::time::interval(tokio::time::Duration::from_secs(30));
                     loop {
                         interval.tick().await;
-                        let mut sched = scheduler_clone.lock().await;
+                        // Lock order: app_data, then scheduler (see AppState).
                         let app_data_guard = app_data_clone.lock().await;
+                        let mut sched = scheduler_clone.lock().await;
                         if let Err(e) = sched.tick(&app_data_guard) {
                             log::error!("Scheduler tick error: {}", e);
                         }
                     }
                 });
             }
-
-            app.manage(AppState {
-                app_data,
-                scheduler,
-            });
 
             Ok(())
         })

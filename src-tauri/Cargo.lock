@@ -119,14 +119,13 @@ dependencies = [
 
 [[package]]
 name = "arkade-manager"
-version = "2.5.3"
+version = "2.6.0"
 dependencies = [
  "anyhow",
  "chrono",
  "directories",
  "env_logger",
  "log",
- "mc-rcon",
  "reqwest 0.12.28",
  "semver",
  "serde",
@@ -139,16 +138,11 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "url",
  "uuid",
  "walkdir",
  "zip 0.6.6",
 ]
-
-[[package]]
-name = "arrayvec"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
 name = "atk"
@@ -2183,15 +2177,6 @@ name = "matches"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
-
-[[package]]
-name = "mc-rcon"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7274fcd1a810664c2f8e3dd115750dee793e38085a1f4792c5f957c0b756e650"
-dependencies = [
- "arrayvec",
-]
 
 [[package]]
 name = "memchr"

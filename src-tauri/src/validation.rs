@@ -4,7 +4,80 @@ use crate::server_ini;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
+const MAX_JOB_NAME_LEN: usize = 100;
+
+const WINDOWS_RESERVED_NAMES: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// The job name becomes part of every backup file name (`{name}_YYYYMMDD_HHMMSS.zip`), so it must
+/// be a valid Windows file name and must not contain path separators that would place backups
+/// outside the destination folder.
+pub fn validate_job_name(name: &str) -> Result<()> {
+    if name.trim().is_empty() {
+        anyhow::bail!("Job name is required");
+    }
+    if name != name.trim() {
+        anyhow::bail!("Job name cannot start or end with spaces");
+    }
+    if name.ends_with('.') {
+        anyhow::bail!("Job name cannot end with a period");
+    }
+    if name.chars().count() > MAX_JOB_NAME_LEN {
+        anyhow::bail!("Job name must be at most {} characters", MAX_JOB_NAME_LEN);
+    }
+    if let Some(c) = name
+        .chars()
+        .find(|c| matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || c.is_control())
+    {
+        anyhow::bail!(
+            "Job name cannot contain '{}' (not allowed: < > : \" / \\ | ? * or control characters)",
+            c.escape_default()
+        );
+    }
+    let stem = name.split('.').next().unwrap_or(name).trim_end();
+    if WINDOWS_RESERVED_NAMES.iter().any(|r| r.eq_ignore_ascii_case(stem)) {
+        anyhow::bail!("Job name cannot be the reserved Windows name '{}'", stem);
+    }
+    Ok(())
+}
+
+/// A host must be a plain IP address (IPv6 optionally in brackets) or DNS hostname. This rejects
+/// spaces, line breaks, ports, paths and other characters that would otherwise be pasted straight
+/// into the RCON address or the Palworld HTTP request.
+pub fn validate_host(host: &str) -> Result<()> {
+    let host = host.trim();
+    if host.is_empty() {
+        anyhow::bail!("Host is empty");
+    }
+    let unbracketed = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
+    if unbracketed.parse::<std::net::IpAddr>().is_ok() {
+        return Ok(());
+    }
+    let valid_hostname = host.len() <= 253
+        && host.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        });
+    if !valid_hostname {
+        anyhow::bail!(
+            "Invalid host '{}': enter an IP address or hostname only (no port, spaces or path)",
+            host.escape_default()
+        );
+    }
+    Ok(())
+}
+
 pub fn validate_job(job: &JobInput, maps: &[MapDefinition]) -> Result<()> {
+    validate_job_name(&job.name)?;
+
     // Validate root_dir exists
     if !Path::new(&job.root_dir).exists() {
         anyhow::bail!("Server root directory does not exist: {}", job.root_dir);
@@ -38,6 +111,10 @@ pub fn validate_job(job: &JobInput, maps: &[MapDefinition]) -> Result<()> {
 
     if job.job_type == "palworld" {
         validate_interval_retention(job)?;
+        // Optional REST API host override; blank means 127.0.0.1.
+        if let Some(host) = job.rcon_host.as_deref().filter(|h| !h.trim().is_empty()) {
+            validate_host(host).context("Palworld API host")?;
+        }
         validate_palworld_rest_settings(&job.root_dir)?;
 
         let world_dir = discover_palworld_world_dir(&job.root_dir)?;
@@ -119,6 +196,7 @@ fn validate_rcon_fields(job: &JobInput) -> Result<()> {
     if !has_host {
         anyhow::bail!("Backup requires RCON host (IP or hostname)");
     }
+    validate_host(job.rcon_host.as_deref().unwrap_or_default()).context("RCON host")?;
     if !has_port {
         anyhow::bail!("Backup requires RCON port (e.g. 25575)");
     }
@@ -303,6 +381,33 @@ mod tests {
         let plugins = derive_plugins_dir(root);
         assert!(plugins.to_string_lossy().contains("Plugins"));
         assert!(plugins.to_string_lossy().contains("ArkApi"));
+    }
+
+    #[test]
+    fn test_validate_job_name() {
+        for ok in ["Island", "Omega Forglar PVE", "Server_PVE-2", "Cobblemon (main)"] {
+            assert!(validate_job_name(ok).is_ok(), "{}", ok);
+        }
+        for bad in [
+            "", "   ", " Island", "Island ", "Island.", r"..\..\Windows\x", "a/b", "C:x",
+            "what?", "bad\"name", "tab\tname", "CON", "nul", "com1.txt",
+        ] {
+            assert!(validate_job_name(bad).is_err(), "{:?}", bad);
+        }
+        assert!(validate_job_name(&"x".repeat(101)).is_err());
+    }
+
+    #[test]
+    fn test_validate_host() {
+        for ok in ["127.0.0.1", "localhost", "pal.example.com", "10.0.0.5", "::1", "[::1]", "game-server-01"] {
+            assert!(validate_host(ok).is_ok(), "{}", ok);
+        }
+        for bad in [
+            "", "  ", "127.0.0.1:8212", "http://host", "host/path", "bad host",
+            "host\r\nX-Injected: 1", "-host", "host-", "a..b",
+        ] {
+            assert!(validate_host(bad).is_err(), "{:?}", bad);
+        }
     }
 
     #[test]

@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use directories::ProjectDirs;
 use serde_json;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const CONFIG_FILE: &str = "config.json";
@@ -66,7 +67,7 @@ impl AppData {
     pub fn save_config(&mut self, config: &Config) -> Result<()> {
         let content = serde_json::to_string_pretty(config)
             .context("Failed to serialize config")?;
-        fs::write(&self.config_path, content)
+        write_atomic(&self.config_path, content.as_bytes())
             .context("Failed to write config file")?;
         Ok(())
     }
@@ -84,8 +85,10 @@ impl AppData {
         jobs.into_iter().find(|j| j.id == id)
     }
 
+    // add/update/delete must propagate read errors: falling back to an empty list here would
+    // overwrite backup_jobs.json and wipe every other job (e.g. when antivirus briefly locks the file).
     pub fn add_job(&mut self, job_input: JobInput) -> Result<Job> {
-        let mut jobs = self.list_jobs().unwrap_or_default();
+        let mut jobs = self.list_jobs()?;
         let new_job = Job::from_input(job_input);
         jobs.push(new_job.clone());
         self.save_jobs(&jobs)?;
@@ -93,7 +96,7 @@ impl AppData {
     }
 
     pub fn update_job(&mut self, job_input: JobInput) -> Result<Job> {
-        let mut jobs = self.list_jobs().unwrap_or_default();
+        let mut jobs = self.list_jobs()?;
         let id = job_input.id.as_ref().ok_or_else(|| anyhow::anyhow!("Job ID required for update"))?;
         
         let job_index = jobs.iter().position(|j| j.id == *id)
@@ -107,7 +110,7 @@ impl AppData {
     }
 
     pub fn delete_job(&mut self, id: &str) -> Result<()> {
-        let mut jobs = self.list_jobs().unwrap_or_default();
+        let mut jobs = self.list_jobs()?;
         jobs.retain(|j| j.id != id);
         self.save_jobs(&jobs)
     }
@@ -115,7 +118,7 @@ impl AppData {
     pub fn save_jobs(&self, jobs: &[Job]) -> Result<()> {
         let content = serde_json::to_string_pretty(jobs)
             .context("Failed to serialize jobs")?;
-        fs::write(&self.jobs_path, content)
+        write_atomic(&self.jobs_path, content.as_bytes())
             .context("Failed to write jobs file")?;
         Ok(())
     }
@@ -127,6 +130,56 @@ impl AppData {
     #[allow(dead_code)]
     pub fn get_data_dir(&self) -> &Path {
         &self._data_dir
+    }
+}
+
+const REPLACE_RETRY_ATTEMPTS: u32 = 5;
+const REPLACE_RETRY_DELAY_MS: u64 = 100;
+
+/// Write a file so readers only ever see the old or the new contents, never a truncated file:
+/// write a uniquely named temp file next to it, flush it to disk, then rename it over the target.
+/// The rename is retried briefly because antivirus/indexers can hold the target open on Windows.
+fn write_atomic(path: &Path, content: &[u8]) -> Result<()> {
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .context("Invalid file path")?;
+    let temp_path = path.with_file_name(format!("{}.{}.tmp", file_name, uuid::Uuid::new_v4()));
+
+    let write_result = (|| -> Result<()> {
+        let mut file = fs::File::create(&temp_path)
+            .with_context(|| format!("Failed to create temp file: {}", temp_path.display()))?;
+        file.write_all(content)
+            .with_context(|| format!("Failed to write temp file: {}", temp_path.display()))?;
+        file.sync_all()
+            .with_context(|| format!("Failed to sync temp file: {}", temp_path.display()))?;
+        Ok(())
+    })();
+    if let Err(e) = write_result {
+        let _ = fs::remove_file(&temp_path);
+        return Err(e);
+    }
+
+    let mut attempt = 1;
+    loop {
+        match fs::rename(&temp_path, path) {
+            Ok(()) => return Ok(()),
+            Err(e) if attempt < REPLACE_RETRY_ATTEMPTS => {
+                log::warn!(
+                    "Failed to replace {} (attempt {}/{}): {}. Retrying...",
+                    path.display(),
+                    attempt,
+                    REPLACE_RETRY_ATTEMPTS,
+                    e
+                );
+                std::thread::sleep(std::time::Duration::from_millis(REPLACE_RETRY_DELAY_MS));
+                attempt += 1;
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&temp_path);
+                return Err(e).with_context(|| format!("Failed to replace {}", path.display()));
+            }
+        }
     }
 }
 
@@ -159,6 +212,44 @@ pub fn read_logs(lines: usize) -> Result<String> {
         Ok(all_lines[start..].join("\n"))
     } else {
         Ok(String::new())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app_data_in(dir: &Path) -> AppData {
+        AppData {
+            _data_dir: dir.to_path_buf(),
+            config_path: dir.join(CONFIG_FILE),
+            jobs_path: dir.join(JOBS_FILE),
+            logs_dir: dir.join(LOGS_DIR),
+        }
+    }
+
+    #[test]
+    fn write_atomic_replaces_contents_and_leaves_no_temp_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("data.json");
+        fs::write(&path, "old").unwrap();
+
+        write_atomic(&path, b"new").unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new");
+        let entries: Vec<_> = fs::read_dir(temp.path()).unwrap().collect();
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn unreadable_jobs_file_is_not_overwritten() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut app_data = app_data_in(temp.path());
+        let corrupt = "[{\"id\": \"truncated";
+        fs::write(&app_data.jobs_path, corrupt).unwrap();
+
+        assert!(app_data.delete_job("anything").is_err());
+        assert_eq!(fs::read_to_string(&app_data.jobs_path).unwrap(), corrupt);
     }
 }
 

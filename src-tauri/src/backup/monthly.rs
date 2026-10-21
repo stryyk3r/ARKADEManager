@@ -4,6 +4,9 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use super::shared::{rename_temp_to_backup, TempFileGuard};
+
 const DEFAULT_MONTHLY_BASE_DIR: &str = r"C:\arkade\Arkade Shared Global\FOTM Backups";
 
 const MONTHLY_CATEGORY_FOLDERS: &[&str] = &[
@@ -47,11 +50,13 @@ fn ensure_monthly_dir_structure(base_dir: &str, dt: DateTime<Utc>) -> Result<Pat
     Ok(month_dir)
 }
 
+/// Count this job's archives in a monthly category folder. Only exact `{job_name}_YYYYMMDD_HHMMSS`
+/// names count, so a job named `Island` does not count `Island_PVP_...` copies, and unfinished
+/// `.partial` copies are ignored.
 fn count_existing_monthly_copies(category_dir: &Path, job_name: &str) -> Result<usize> {
     if !category_dir.exists() {
         return Ok(0);
     }
-    let prefix = format!("{}_", job_name);
     let mut count = 0usize;
     for entry in fs::read_dir(category_dir)? {
         let entry = entry?;
@@ -63,15 +68,26 @@ fn count_existing_monthly_copies(category_dir: &Path, job_name: &str) -> Result<
             Some(s) => s,
             None => continue,
         };
-        if !file_name.starts_with(&prefix) {
-            continue;
-        }
-        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if ext.eq_ignore_ascii_case("zip") || ext.eq_ignore_ascii_case("7z") {
+        if parse_backup_timestamp_from_filename(job_name, file_name).is_some() {
             count += 1;
         }
     }
     Ok(count)
+}
+
+/// Copy to `{dest}.partial` and rename when complete, so a copy interrupted part-way (network
+/// share dropped, disk full) never leaves a truncated archive that counts as a monthly copy.
+fn copy_complete_file(source: &Path, dest: &Path) -> Result<()> {
+    let file_name = dest
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Invalid destination path: {}", dest.display()))?;
+    let partial = dest.with_file_name(format!("{}.partial", file_name));
+    let _partial_guard = TempFileGuard::new(&partial);
+    fs::copy(source, &partial).with_context(|| {
+        format!("Failed to copy {} -> {}", source.display(), partial.display())
+    })?;
+    rename_temp_to_backup(&partial, dest)
 }
 
 pub(crate) fn maybe_copy_backup_to_monthly(app_data: &AppData, job: &Job, backup_path: &Path) -> Result<()> {
@@ -118,13 +134,7 @@ pub(crate) fn maybe_copy_backup_to_monthly(app_data: &AppData, job: &Job, backup
     let dest_path = category_dir.join(file_name);
 
     // Copy (do not remove original backup).
-    fs::copy(backup_path, &dest_path).with_context(|| {
-        format!(
-            "Failed to copy monthly backup: {} -> {}",
-            backup_path.display(),
-            dest_path.display()
-        )
-    })?;
+    copy_complete_file(backup_path, &dest_path).context("Failed to copy monthly backup")?;
     log::info!(
         "MONTHLY: Copied {} (job {}) into {}",
         backup_path.display(),
@@ -312,47 +322,75 @@ pub fn preview_monthly_archive(app_data: &AppData) -> Result<MonthlyArchivePrevi
     })
 }
 
-pub fn run_monthly_archive(app_data: &AppData) -> Result<MonthlyArchiveResult> {
+/// What a manual monthly archive will copy. Built quickly while holding the app-data lock; the
+/// (possibly multi-GB, network-share) copying happens afterwards in `execute_monthly_archive`
+/// without the lock, so the UI and scheduler keep working meanwhile.
+pub struct MonthlyArchivePlan {
+    destination: String,
+    /// (source backup file, monthly category folder)
+    copies: Vec<(PathBuf, String)>,
+}
+
+pub fn plan_monthly_archive(app_data: &AppData) -> Result<MonthlyArchivePlan> {
     let config = app_data.get_config()?;
     let destination = config
         .monthly_archive_destination
         .unwrap_or_else(|| DEFAULT_MONTHLY_BASE_DIR.to_string());
 
     let preview = preview_monthly_archive(app_data)?;
-    
-    if preview.files.is_empty() {
-        return Ok(MonthlyArchiveResult {
-            archived: 0,
-            destination,
-        });
-    }
+    let jobs = app_data.list_jobs()?;
 
-    // Create destination directory structure (and next month ahead)
-    let now = Utc::now();
-    let month_dir = ensure_monthly_dir_structure(&destination, now)?;
-
-    // Copy files (do not remove originals)
-    let mut archived = 0;
-    for file_path_str in &preview.files {
-        let source_path = Path::new(file_path_str);
+    let mut copies = Vec::with_capacity(preview.files.len());
+    for file_path_str in preview.files {
+        let source_path = PathBuf::from(&file_path_str);
         let file_name = source_path
             .file_name()
             .ok_or_else(|| anyhow::anyhow!("Invalid file path: {}", file_path_str))?
             .to_string_lossy()
             .to_string();
 
-        let jobs = app_data.list_jobs().unwrap_or_default();
         let category = owning_job_for_backup_filename(&file_name, &jobs)
             .map(|j| j.monthly_cluster.trim())
             .filter(|s| !s.is_empty())
-            .unwrap_or("ASA Legacy");
+            .unwrap_or("ASA Legacy")
+            .to_string();
 
-        let dest_path = month_dir.join(category).join(&file_name);
-        fs::copy(source_path, &dest_path)
-            .with_context(|| format!("Failed to copy file: {}", file_path_str))?;
-        
+        copies.push((source_path, category));
+    }
+
+    Ok(MonthlyArchivePlan {
+        destination,
+        copies,
+    })
+}
+
+pub fn execute_monthly_archive(plan: MonthlyArchivePlan) -> Result<MonthlyArchiveResult> {
+    let MonthlyArchivePlan {
+        destination,
+        copies,
+    } = plan;
+
+    if copies.is_empty() {
+        return Ok(MonthlyArchiveResult {
+            archived: 0,
+            destination,
+        });
+    }
+
+    // Create destination directory structure
+    let month_dir = ensure_monthly_dir_structure(&destination, Utc::now())?;
+
+    // Copy files (do not remove originals)
+    let mut archived = 0;
+    for (source_path, category) in &copies {
+        let file_name = source_path
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("Invalid file path: {}", source_path.display()))?;
+        let dest_path = month_dir.join(category).join(file_name);
+        copy_complete_file(source_path, &dest_path)?;
+
         archived += 1;
-        log::info!("Archived: {} -> {}", file_path_str, dest_path.display());
+        log::info!("Archived: {} -> {}", source_path.display(), dest_path.display());
     }
 
     Ok(MonthlyArchiveResult {
@@ -363,7 +401,53 @@ pub fn run_monthly_archive(app_data: &AppData) -> Result<MonthlyArchiveResult> {
 
 #[cfg(test)]
 mod tests {
+    use super::{copy_complete_file, count_existing_monthly_copies};
     use chrono::Utc;
+    use std::fs;
+
+    #[test]
+    fn monthly_count_ignores_similar_job_names_and_partial_copies() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        for name in [
+            "Island_20261001_120000.zip",
+            "Island_PVP_20261001_120000.zip",
+            "Island_PVP_20261002_120000.zip",
+            "Island_20261002_120000.zip.partial",
+            "Island_notes.zip",
+        ] {
+            fs::write(dir.join(name), b"x").unwrap();
+        }
+
+        assert_eq!(count_existing_monthly_copies(dir, "Island").unwrap(), 1);
+        assert_eq!(count_existing_monthly_copies(dir, "Island_PVP").unwrap(), 2);
+    }
+
+    #[test]
+    fn complete_copy_leaves_no_partial_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("Island_20261001_120000.zip");
+        fs::write(&source, b"archive").unwrap();
+        let dest_dir = temp.path().join("monthly");
+        fs::create_dir_all(&dest_dir).unwrap();
+        let dest = dest_dir.join("Island_20261001_120000.zip");
+
+        copy_complete_file(&source, &dest).unwrap();
+
+        assert_eq!(fs::read(&dest).unwrap(), b"archive");
+        assert_eq!(fs::read_dir(&dest_dir).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn failed_copy_leaves_nothing_behind() {
+        let temp = tempfile::tempdir().unwrap();
+        let dest_dir = temp.path().join("monthly");
+        fs::create_dir_all(&dest_dir).unwrap();
+
+        let missing = temp.path().join("missing.zip");
+        assert!(copy_complete_file(&missing, &dest_dir.join("Island_20261001_120000.zip")).is_err());
+        assert_eq!(fs::read_dir(&dest_dir).unwrap().count(), 0);
+    }
 
     #[test]
     fn test_retention_cutoff() {

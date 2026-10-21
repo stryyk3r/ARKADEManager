@@ -134,22 +134,62 @@ pub fn list_plugin_folders(server_root: &str) -> Result<Vec<serde_json::Value>, 
     Ok(folders)
 }
 
-/// Toggle a plugin folder between enabled and _OFF disabled state.
-pub fn toggle_plugin_folder(folder_path: &str) -> Result<String, String> {
-    let path = Path::new(folder_path);
+/// True if `name` is a single, ordinary folder name: no separators, drive letters or `.`/`..`.
+fn is_plain_folder_name(name: &str) -> bool {
+    !name.trim().is_empty()
+        && !name.contains(['/', '\\', ':'])
+        && matches!(
+            Path::new(name).components().collect::<Vec<_>>().as_slice(),
+            [std::path::Component::Normal(_)]
+        )
+}
 
-    if !path.exists() {
-        return Err(format!("Folder does not exist: {}", folder_path));
-    }
+/// True if `path` contains no `.`/`..` components, so comparing it as text can't be fooled.
+fn has_no_relative_components(path: &Path) -> bool {
+    !path.components().any(|c| {
+        matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir)
+    })
+}
+
+/// Keys of the plugin directories of all known ASA servers, for checking paths sent by the UI.
+pub fn allowed_plugin_dir_keys(roots: &[String]) -> HashSet<String> {
+    roots
+        .iter()
+        .map(|root| server_roots::normalize_path_key(&derive_plugins_dir(root).to_string_lossy()))
+        .collect()
+}
+
+/// True if `path` is (lexically) one of the allowed plugin directories.
+fn is_allowed_plugin_dir(path: &Path, allowed_dir_keys: &HashSet<String>) -> bool {
+    has_no_relative_components(path)
+        && allowed_dir_keys.contains(&server_roots::normalize_path_key(&path.to_string_lossy()))
+}
+
+/// Toggle a plugin folder between enabled and _OFF disabled state.
+/// The folder must sit directly inside one of the known servers' plugin directories.
+pub fn toggle_plugin_folder(folder_path: &str, allowed_dir_keys: &HashSet<String>) -> Result<String, String> {
+    let path = Path::new(folder_path.trim());
 
     let folder_name = path
         .file_name()
         .and_then(|n| n.to_str())
+        .filter(|n| is_plain_folder_name(n))
         .ok_or_else(|| "Invalid folder name".to_string())?;
 
     let parent = path
         .parent()
         .ok_or_else(|| "Invalid folder path".to_string())?;
+
+    if !is_allowed_plugin_dir(parent, allowed_dir_keys) {
+        return Err(format!(
+            "Not a plugin folder of a known ARK server: {}",
+            folder_path
+        ));
+    }
+
+    if !path.is_dir() {
+        return Err(format!("Folder does not exist: {}", folder_path));
+    }
 
     let new_name = if folder_name.ends_with("_OFF") {
         folder_name
@@ -173,6 +213,10 @@ pub fn toggle_plugin_for_all_servers(
     target_state_disabled: bool,
     roots: &[String],
 ) -> Result<Vec<String>, String> {
+    if !is_plain_folder_name(base_folder_name) {
+        return Err(format!("Invalid plugin folder name: {}", base_folder_name));
+    }
+
     let target_name = if target_state_disabled {
         format!("{}_OFF", base_folder_name)
     } else {
@@ -255,6 +299,33 @@ pub fn discover_plugin_destinations(
     destinations
 }
 
+/// Copy `source` over `dest` without ever leaving `dest` missing or half-written: copy into a temp
+/// file next to it, then rename over the original. If either step fails (e.g. the DLL is locked by
+/// the running server), the existing file is left exactly as it was.
+fn replace_file(source: &Path, dest: &Path) -> Result<(), String> {
+    let file_name = dest
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| format!("Invalid destination file: {}", dest.display()))?;
+    let temp = dest.with_file_name(format!("{}.arkade-tmp", file_name));
+
+    let result = fs::copy(source, &temp)
+        .map_err(|e| format!("Failed to copy file {}: {}", source.display(), e))
+        .and_then(|_| {
+            fs::rename(&temp, dest).map_err(|e| {
+                format!(
+                    "Failed to replace {} (it may be in use by the running server; the existing file was left unchanged): {}",
+                    dest.display(),
+                    e
+                )
+            })
+        });
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result
+}
+
 /// Copy a folder recursively, tracking overwrites
 fn copy_folder_recursive(
     source: &Path,
@@ -282,30 +353,36 @@ fn copy_folder_recursive(
                 .file_name()
                 .ok_or_else(|| "Invalid entry name".to_string())?;
             let dest_path = destination.join(entry_name);
-            
-            if entry_path.is_dir() {
+            // file_type() does not follow links. Symlinks/junctions are skipped: following them could
+            // copy files from anywhere on disk or recurse forever if one points back up the tree.
+            let file_type = entry
+                .file_type()
+                .map_err(|e| format!("Failed to read entry type {:?}: {}", entry_path, e))?;
+            if file_type.is_symlink() {
+                log::warn!("Skipping link in plugin source (not copied): {}", entry_path.display());
+                continue;
+            }
+
+            if file_type.is_dir() {
                 let (copied, overwritten) = copy_folder_recursive(&entry_path, &dest_path)?;
                 files_copied += copied;
                 files_overwritten += overwritten;
             } else {
-                // Check if file already exists
-                if dest_path.exists() {
-                    files_overwritten += 1;
-                    // On Windows, overwriting a read-only file can fail. Clear read-only so the copy can replace it.
+                let existed = dest_path.exists();
+                if existed {
+                    // On Windows, replacing a read-only file fails. Clear read-only so it can be replaced.
                     if let Ok(meta) = fs::metadata(&dest_path) {
                         let mut p = meta.permissions();
                         p.set_readonly(false);
                         let _ = fs::set_permissions(&dest_path, p);
                     }
+                }
+
+                replace_file(&entry_path, &dest_path)?;
+                if existed {
+                    files_overwritten += 1;
                 } else {
                     files_copied += 1;
-                }
-                
-                if fs::copy(&entry_path, &dest_path).is_err() {
-                    // If overwrite failed (e.g. read-only or lock), try remove-then-copy
-                    let _ = fs::remove_file(&dest_path);
-                    fs::copy(&entry_path, &dest_path)
-                        .map_err(|e| format!("Failed to copy file {:?}: {}", entry_path, e))?;
                 }
             }
         }
@@ -316,32 +393,72 @@ fn copy_folder_recursive(
     Ok((files_copied, files_overwritten))
 }
 
-/// Install selected plugins to selected destinations
+/// Install selected plugins to selected destinations.
+/// Every destination must be the plugin directory of a known ASA server.
 pub fn install_plugins(
     source_plugin_paths: Vec<String>,
     destination_plugin_paths: Vec<String>,
+    allowed_dir_keys: &HashSet<String>,
 ) -> Result<InstallResult, String> {
+    for dest_plugin_path in &destination_plugin_paths {
+        if !is_allowed_plugin_dir(Path::new(dest_plugin_path.trim()), allowed_dir_keys) {
+            return Err(format!(
+                "Not a plugin folder of a known ARK server: {}",
+                dest_plugin_path
+            ));
+        }
+    }
+
     let mut total_files_copied = 0;
     let mut total_files_overwritten = 0;
     let mut errors = Vec::new();
-    
+
     for source_path in &source_plugin_paths {
         let source = Path::new(source_path);
-        
-        if !source.exists() {
-            errors.push(format!("Source plugin not found: {}", source_path));
+
+        if !source.is_dir() {
+            errors.push(format!("Source plugin folder not found: {}", source_path));
             continue;
         }
-        
-        let plugin_name = source
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("Unknown");
-        
+        let source_canonical = match source.canonicalize() {
+            Ok(p) => p,
+            Err(e) => {
+                errors.push(format!("Cannot access source plugin {}: {}", source_path, e));
+                continue;
+            }
+        };
+
+        let plugin_name = match source.file_name().and_then(|n| n.to_str()) {
+            Some(name) if is_plain_folder_name(name) => name,
+            _ => {
+                errors.push(format!("Invalid source plugin folder: {}", source_path));
+                continue;
+            }
+        };
+
         for dest_plugin_path in &destination_plugin_paths {
-            let dest_plugin_dir = Path::new(dest_plugin_path);
+            let dest_plugin_dir = Path::new(dest_plugin_path.trim());
             let dest_plugin_folder = dest_plugin_dir.join(plugin_name);
-            
+
+            // Copying a folder into itself would recurse forever.
+            let dest_inside_source = fs::create_dir_all(dest_plugin_dir)
+                .and_then(|_| dest_plugin_dir.canonicalize())
+                .map(|dest| dest.starts_with(&source_canonical));
+            match dest_inside_source {
+                Ok(false) => {}
+                Ok(true) => {
+                    errors.push(format!(
+                        "Cannot install {} into {}: the destination is inside the source folder",
+                        plugin_name, dest_plugin_path
+                    ));
+                    continue;
+                }
+                Err(e) => {
+                    errors.push(format!("Cannot access destination {}: {}", dest_plugin_path, e));
+                    continue;
+                }
+            }
+
             match copy_folder_recursive(source, &dest_plugin_folder) {
                 Ok((copied, overwritten)) => {
                     total_files_copied += copied;
@@ -366,3 +483,105 @@ pub fn install_plugins(
     })
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_server(root: &Path) -> (String, std::path::PathBuf) {
+        let plugins_dir = derive_plugins_dir(&root.to_string_lossy());
+        fs::create_dir_all(plugins_dir.join("CoolPlugin")).unwrap();
+        (root.to_string_lossy().to_string(), plugins_dir)
+    }
+
+    #[test]
+    fn plain_folder_names() {
+        assert!(is_plain_folder_name("CoolPlugin"));
+        assert!(is_plain_folder_name("Cool Plugin_OFF"));
+        for bad in ["", " ", ".", "..", r"..\x", "a/b", r"a\b", "C:x"] {
+            assert!(!is_plain_folder_name(bad), "{:?}", bad);
+        }
+    }
+
+    #[test]
+    fn toggle_only_inside_known_plugin_dirs() {
+        let temp = tempfile::tempdir().unwrap();
+        let (root, plugins_dir) = setup_server(&temp.path().join("server1"));
+        let allowed = allowed_plugin_dir_keys(&[root]);
+
+        let outside = temp.path().join("Important");
+        fs::create_dir_all(&outside).unwrap();
+        assert!(toggle_plugin_folder(&outside.to_string_lossy(), &allowed).is_err());
+        assert!(outside.exists());
+
+        let sneaky = plugins_dir.join("CoolPlugin").join("..").join("..").join("Plugins").join("CoolPlugin");
+        assert!(toggle_plugin_folder(&sneaky.to_string_lossy(), &allowed).is_err());
+
+        let renamed = toggle_plugin_folder(&plugins_dir.join("CoolPlugin").to_string_lossy(), &allowed).unwrap();
+        assert!(renamed.ends_with("CoolPlugin_OFF"));
+    }
+
+    #[test]
+    fn replace_file_overwrites_read_only_existing_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let src_dir = temp.path().join("src");
+        let dst_dir = temp.path().join("dst");
+        fs::create_dir_all(&src_dir).unwrap();
+        fs::create_dir_all(&dst_dir).unwrap();
+        fs::write(src_dir.join("plugin.dll"), b"new").unwrap();
+        let existing = dst_dir.join("plugin.dll");
+        fs::write(&existing, b"old").unwrap();
+        let mut perms = fs::metadata(&existing).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&existing, perms).unwrap();
+
+        let (copied, overwritten) = copy_folder_recursive(&src_dir, &dst_dir).unwrap();
+
+        assert_eq!((copied, overwritten), (0, 1));
+        assert_eq!(fs::read(&existing).unwrap(), b"new");
+        assert!(!dst_dir.join("plugin.dll.arkade-tmp").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_replace_keeps_existing_file() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("new.dll");
+        let dest = temp.path().join("plugin.dll");
+        fs::write(&source, b"new").unwrap();
+        fs::write(&dest, b"old").unwrap();
+
+        // Source locked exclusively, so the copy fails part-way through the install.
+        let lock = fs::OpenOptions::new().read(true).share_mode(0).open(&source).unwrap();
+        assert!(replace_file(&source, &dest).is_err());
+        drop(lock);
+
+        assert_eq!(fs::read(&dest).unwrap(), b"old");
+        assert!(!temp.path().join("plugin.dll.arkade-tmp").exists());
+    }
+
+    #[test]
+    fn toggle_all_rejects_traversal_names() {
+        assert!(toggle_plugin_for_all_servers(r"..\..\Windows", true, &[]).is_err());
+    }
+
+    #[test]
+    fn install_rejects_unknown_destination_and_copies_to_known() {
+        let temp = tempfile::tempdir().unwrap();
+        let (root, plugins_dir) = setup_server(&temp.path().join("server1"));
+        let allowed = allowed_plugin_dir_keys(&[root]);
+
+        let source = temp.path().join("src").join("NewPlugin");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("config.json"), b"{}").unwrap();
+        let sources = vec![source.to_string_lossy().to_string()];
+
+        let elsewhere = temp.path().join("elsewhere").to_string_lossy().to_string();
+        assert!(install_plugins(sources.clone(), vec![elsewhere], &allowed).is_err());
+
+        let result = install_plugins(sources, vec![plugins_dir.to_string_lossy().to_string()], &allowed).unwrap();
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert!(plugins_dir.join("NewPlugin").join("config.json").exists());
+    }
+}

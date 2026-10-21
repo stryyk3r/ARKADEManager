@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { state } from '../../state.js';
+import { escapeHtml, escapeHtmlAttr } from '../../utils/dom.js';
 
 export async function browsePluginSource() {
   try {
@@ -30,7 +31,7 @@ async function loadSourcePlugins(sourcePath) {
   } catch (error) {
     console.error('Error loading source plugins:', error);
     document.getElementById('pluginSourceList').innerHTML = 
-      `<div class="empty-state" style="color: var(--error);">Error: ${error}</div>`;
+      `<div class="empty-state" style="color: var(--error);">Error: ${escapeHtml(String(error))}</div>`;
   }
 }
 
@@ -46,8 +47,8 @@ function renderSourcePlugins() {
 
   container.innerHTML = state.pluginSourcePlugins.map((plugin, index) => `
     <div class="plugin-item">
-      <input type="checkbox" id="source-plugin-${index}" data-path="${plugin.path}">
-      <label for="source-plugin-${index}" class="plugin-item-label">${plugin.name}</label>
+      <input type="checkbox" id="source-plugin-${index}" data-path="${escapeHtmlAttr(plugin.path)}">
+      <label for="source-plugin-${index}" class="plugin-item-label">${escapeHtml(plugin.name)}</label>
     </div>
   `).join('');
 
@@ -71,7 +72,7 @@ export async function refreshPluginDestinations() {
   } catch (error) {
     console.error('Error loading destinations:', error);
     document.getElementById('pluginDestinationList').innerHTML =
-      `<div class="empty-state" style="color: var(--error);">Error: ${error}</div>`;
+      `<div class="empty-state" style="color: var(--error);">Error: ${escapeHtml(String(error))}</div>`;
     const toggleBtn = document.getElementById('destToggleAllBtn');
     if (toggleBtn) toggleBtn.disabled = true;
   }
@@ -89,8 +90,8 @@ function renderDestinations() {
 
   container.innerHTML = state.pluginDestinations.map((server, index) => `
     <div class="plugin-item">
-      <input type="checkbox" id="dest-server-${index}" data-path="${server.plugin_path}">
-      <label for="dest-server-${index}" class="plugin-item-label">${server.name}</label>
+      <input type="checkbox" id="dest-server-${index}" data-path="${escapeHtmlAttr(server.plugin_path)}">
+      <label for="dest-server-${index}" class="plugin-item-label">${escapeHtml(server.name)}</label>
     </div>
   `).join('');
 
@@ -235,12 +236,12 @@ function showPluginConfirmModal(selectedPlugins, selectedServers) {
   
   html += '<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px;">';
   html += `<strong>Plugins to install (${selectedPlugins.length}):</strong><br>`;
-  html += `<div style="margin-top: 8px; margin-left: 12px;">${selectedPlugins.join(', ')}</div>`;
+  html += `<div style="margin-top: 8px; margin-left: 12px;">${escapeHtml(selectedPlugins.join(', '))}</div>`;
   html += '</div>';
   
   html += '<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px;">';
   html += `<strong>Destination servers (${selectedServers.length}):</strong><br>`;
-  html += `<div style="margin-top: 8px; margin-left: 12px;">${selectedServers.join(', ')}</div>`;
+  html += `<div style="margin-top: 8px; margin-left: 12px;">${escapeHtml(selectedServers.join(', '))}</div>`;
   html += '</div>';
   
   html += '<div style="padding: 12px; background: rgba(255, 193, 7, 0.1); border: 1px solid #ffc107; border-radius: 4px; color: #f57c00;">';
@@ -275,8 +276,8 @@ function showPluginResults(result, selectedPlugins, selectedServers) {
   title.textContent = 'Installation Complete';
 
   let html = '<div style="margin-bottom: 16px;">';
-  html += `<strong>Plugins installed:</strong> ${selectedPlugins.join(', ')}<br>`;
-  html += `<strong>Servers updated:</strong> ${selectedServers.join(', ')}<br><br>`;
+  html += `<strong>Plugins installed:</strong> ${escapeHtml(selectedPlugins.join(', '))}<br>`;
+  html += `<strong>Servers updated:</strong> ${escapeHtml(selectedServers.join(', '))}<br><br>`;
   html += '</div>';
 
   html += '<div style="margin-bottom: 16px;">';
@@ -288,7 +289,7 @@ function showPluginResults(result, selectedPlugins, selectedServers) {
     html += '<div style="margin-top: 16px; padding: 12px; background: rgba(211, 47, 47, 0.1); border: 1px solid var(--error); border-radius: 4px;">';
     html += '<strong style="color: var(--error);">Errors:</strong><ul style="margin-top: 8px; padding-left: 20px;">';
     result.errors.forEach(error => {
-      html += `<li style="color: var(--error); margin-bottom: 4px;">${error}</li>`;
+      html += `<li style="color: var(--error); margin-bottom: 4px;">${escapeHtml(String(error))}</li>`;
     });
     html += '</ul></div>';
   } else {
@@ -319,7 +320,7 @@ function showPluginResultsError(error) {
   title.textContent = 'Installation Failed';
   content.innerHTML = `
     <div style="padding: 12px; background: rgba(211, 47, 47, 0.1); border: 1px solid var(--error); border-radius: 4px; color: var(--error);">
-      <strong>Error:</strong> ${error}
+      <strong>Error:</strong> ${escapeHtml(String(error))}
     </div>
   `;
   modal.classList.add('show');

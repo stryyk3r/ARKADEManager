@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{BufReader, Read, Write};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -16,11 +16,11 @@ use walkdir::WalkDir;
 use zip::write::ZipWriter;
 
 use super::monthly::maybe_copy_backup_to_monthly;
-use super::rcon::{job_has_rcon, run_rcon_commands};
+use super::rcon::{job_has_rcon, run_rcon_commands, SaveOnGuard};
 use super::retention::cleanup_minecraft_retention;
 use super::shared::{
-    find_7z, is_disk_full_error, rename_temp_to_backup, verify_zip_integrity, zip_options_for_path,
-    BackupProgressPayload,
+    add_optional_file_to_zip, find_7z, is_disk_full_error, rename_temp_to_backup,
+    verify_zip_integrity, zip_options_for_path, BackupProgressPayload, TempFileGuard,
 };
 /// Returns true if a file should be skipped when copying/archiving Minecraft backup paths.
 fn should_skip_minecraft_backup_file(path: &Path) -> bool {
@@ -175,42 +175,54 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
         let port = job.rcon_port.unwrap();
         let password = job.rcon_password.as_ref().unwrap().clone();
 
+        // Armed before save-off: from here on, every exit path re-enables saving.
+        let save_on_guard = SaveOnGuard::arm(host.clone(), port, password.clone());
+
         log::info!("RCON: disabling saves and flushing (save-off; save-all flush)");
-        tokio::task::spawn_blocking({
-            let host = host.clone();
-            let password = password.clone();
-            move || run_rcon_commands(host, port, password, vec!["save-off", "save-all flush"])
-        })
-        .await
-        .context("RCON task failed")??;
-
-        log::info!("Waiting 3 seconds for save-all flush to complete before copying...");
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-        let staging_dir = std::env::temp_dir().join(format!(
-            "arkade_minecraft_{}_{}",
-            job.id,
-            Utc::now().format("%Y%m%d_%H%M%S")
-        ));
-        fs::create_dir_all(&staging_dir)
-            .with_context(|| format!("Failed to create staging dir: {}", staging_dir.display()))?;
-
-        let copy_result = copy_minecraft_paths_to_staging(root_path, &staging_dir, &backup_dirs);
-
-        log::info!("RCON: re-enabling saves (save-on)");
-        let host = job.rcon_host.as_ref().unwrap().trim().to_string();
-        let port = job.rcon_port.unwrap();
-        let password = job.rcon_password.as_ref().unwrap().clone();
-        tokio::task::spawn_blocking(move || run_rcon_commands(host, port, password, vec!["save-on"]))
+        let copy_result = async {
+            tokio::task::spawn_blocking(move || {
+                run_rcon_commands(host, port, password, vec!["save-off", "save-all flush"])
+            })
             .await
             .context("RCON task failed")??;
 
-        copy_result.map_err(|e| {
+            log::info!("Waiting 3 seconds for save-all flush to complete before copying...");
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+            let staging_dir = std::env::temp_dir().join(format!(
+                "arkade_minecraft_{}_{}",
+                job.id,
+                Utc::now().format("%Y%m%d_%H%M%S")
+            ));
+            fs::create_dir_all(&staging_dir)
+                .with_context(|| format!("Failed to create staging dir: {}", staging_dir.display()))?;
+            let staging_guard = StagingGuard(Some(staging_dir.clone()));
+
+            copy_minecraft_paths_to_staging(root_path, &staging_dir, &backup_dirs)?;
+            anyhow::Ok((staging_dir, staging_guard))
+        }
+        .await;
+
+        log::info!("RCON: re-enabling saves (save-on)");
+        let save_on_result = save_on_guard.send().await;
+
+        // A failed save-on is the more urgent problem: the live server is not saving the world.
+        if let Err(e) = save_on_result {
+            log::error!(
+                "RCON: FAILED to re-enable saving (save-on): {:#}. World saving is still OFF — run `save-on` on the server manually.",
+                e
+            );
+            return Err(e.context(
+                "Failed to re-enable world saving (save-on) after backup copy. World saving is still OFF on the server; run `save-on` manually",
+            ));
+        }
+
+        let (staging_dir, staging_guard) = copy_result.map_err(|e| {
             log::error!("Copy to staging failed: {:#}", e);
             e
         })?;
         log::info!("Staging copy completed, compressing from: {}", staging_dir.display());
-        (staging_dir.clone(), StagingGuard(Some(staging_dir)))
+        (staging_dir, staging_guard)
     } else {
         (root_path.to_path_buf(), StagingGuard(None))
     };
@@ -240,6 +252,7 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
         // Compress to temp on system drive (e.g. C) first, then copy to backup location (e.g. D).
         // This can be faster when the backup drive is slower, and avoids 7z doing many small writes across drives.
         let temp_7z = std::env::temp_dir().join(format!("arkade_7z_{}_{}.7z", job.id, timestamp));
+        let _temp_7z_guard = TempFileGuard::new(&temp_7z);
         log::info!("7-Zip writing to temp: {} then copying to {}", temp_7z.display(), backup_path.display());
 
         // 7z progress 0-100 is mapped to 10-90%
@@ -262,8 +275,13 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
                     let _ = tx.send(90);
                 }
                 log::info!("Copying 7z archive to backup location: {}", backup_path.display());
-                fs::copy(&temp_7z, &backup_path)
-                    .with_context(|| format!("Failed to copy 7z from {} to {}", temp_7z.display(), backup_path.display()))?;
+                // Copy under a .tmp name and rename when complete, so an interrupted copy never
+                // leaves a truncated .7z that retention and the monthly archive treat as a backup.
+                let dest_temp = backup_path.with_extension("7z.tmp");
+                let _dest_temp_guard = TempFileGuard::new(&dest_temp);
+                fs::copy(&temp_7z, &dest_temp)
+                    .with_context(|| format!("Failed to copy 7z from {} to {}", temp_7z.display(), dest_temp.display()))?;
+                rename_temp_to_backup(&dest_temp, &backup_path)?;
                 let _ = fs::remove_file(&temp_7z);
                 // Copy to backup location done → 100%
                 if let Some(ref tx) = progress_tx {
@@ -314,10 +332,22 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
             .with_context(|| format!("Failed to create destination directory: {}", parent.display()))?;
     }
 
-    let result = attempt_minecraft_backup(&temp_path, &backup_path, &backup_dirs).await;
+    // With RCON, archive the staging copy taken while saving was paused — not the live folders,
+    // which the server has been writing to again since save-on.
+    let zip_source_dirs: Vec<PathBuf> = if use_staging_layout {
+        dir_names
+            .iter()
+            .map(|name| source_path.join(name))
+            .filter(|dir| dir.is_dir())
+            .collect()
+    } else {
+        backup_dirs.clone()
+    };
+
+    let result = attempt_minecraft_backup(&temp_path, &backup_path, &zip_source_dirs).await;
 
     match result {
-        Ok(file_size) => {
+        Ok((file_size, skipped)) => {
             if file_size == 0 {
                 if backup_path.exists() {
                     let _ = fs::remove_file(&backup_path);
@@ -334,15 +364,18 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
                 );
             }
 
+            if skipped > 0 {
+                return Err(skipped_files_warning(skipped, &backup_path));
+            }
             Ok(file_size)
         }
         Err(e) if is_disk_full_error(&e) => {
             log::warn!("Minecraft backup failed (disk full). Cleaning up old backups and retrying...");
             cleanup_minecraft_retention(&job.destination_dir, &job.name)
                 .context("Failed to cleanup old Minecraft backups")?;
-            let retry_result = attempt_minecraft_backup(&temp_path, &backup_path, &backup_dirs).await;
+            let retry_result = attempt_minecraft_backup(&temp_path, &backup_path, &zip_source_dirs).await;
             match retry_result {
-                Ok(file_size) => {
+                Ok((file_size, skipped)) => {
                     if file_size == 0 {
                         if backup_path.exists() {
                             let _ = fs::remove_file(&backup_path);
@@ -358,6 +391,9 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
                         );
                     }
 
+                    if skipped > 0 {
+                        return Err(skipped_files_warning(skipped, &backup_path));
+                    }
                     Ok(file_size)
                 }
                 Err(retry_err) => {
@@ -593,11 +629,23 @@ async fn run_minecraft_backup_7z(
     })
 }
 
+/// Same wording as the 7-Zip path so the UI treats both alike: the archive is kept, but the run
+/// is reported as a warning instead of a clean success because it is missing files.
+fn skipped_files_warning(skipped: usize, backup_path: &Path) -> anyhow::Error {
+    anyhow::anyhow!(
+        "Backup completed with warnings: {} file(s) were locked/unreadable and were skipped. Archive was created at: {}",
+        skipped,
+        backup_path.display()
+    )
+}
+
+/// Returns (archive size, number of files skipped because they could not be read).
 async fn attempt_minecraft_backup(
     temp_path: &Path,
     backup_path: &Path,
     backup_dirs: &[PathBuf],
-) -> Result<u64> {
+) -> Result<(u64, usize)> {
+    let _temp_guard = TempFileGuard::new(temp_path);
     let file = fs::File::create(temp_path)
         .with_context(|| format!("Failed to create backup file: {}", temp_path.display()))?;
     let mut zip = ZipWriter::new(file);
@@ -624,23 +672,8 @@ async fn attempt_minecraft_backup(
             );
             let options = zip_options_for_path(path);
 
-            match fs::File::open(path) {
-                Ok(mut f) => {
-                    let mut buffer = Vec::new();
-                    if f.read_to_end(&mut buffer).is_ok() {
-                        if let Err(e) = zip.start_file(zip_path.clone(), options) {
-                            return Err(anyhow::anyhow!("Failed to add file to ZIP: {}", e));
-                        }
-                        if let Err(e) = zip.write_all(&buffer) {
-                            return Err(anyhow::anyhow!("Failed to write file to ZIP: {}", e));
-                        }
-                    }
-                }
-                Err(e) => {
-                    let path_str = path.display().to_string();
-                    log::warn!("Skipping file {} (may be locked): {}", path_str, e);
-                    skipped_locked.push(path_str);
-                }
+            if !add_optional_file_to_zip(&mut zip, path, &zip_path, &options)? {
+                skipped_locked.push(path.display().to_string());
             }
         }
     }
@@ -676,5 +709,5 @@ async fn attempt_minecraft_backup(
 
     verify_zip_integrity(backup_path)?;
 
-    Ok(file_size)
+    Ok((file_size, skipped_locked.len()))
 }

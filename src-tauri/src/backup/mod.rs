@@ -10,6 +10,6 @@ pub use ark::create_backup;
 pub use minecraft::create_minecraft_backup;
 pub use palworld::create_palworld_backup;
 pub use monthly::{
-    get_monthly_status, preview_monthly_archive, run_monthly_archive, MonthlyArchivePreview,
-    MonthlyArchiveResult, MonthlyStatusResult,
+    execute_monthly_archive, get_monthly_status, plan_monthly_archive, preview_monthly_archive,
+    MonthlyArchivePreview, MonthlyArchiveResult, MonthlyStatusResult,
 };

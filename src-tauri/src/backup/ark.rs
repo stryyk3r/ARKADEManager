@@ -5,16 +5,18 @@ use crate::validation;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use std::fs;
-use std::io::{Read, Write};
 use std::path::Path;
 use walkdir::WalkDir;
 use zip::write::{FileOptions, ZipWriter};
 use zip::CompressionMethod;
 
 use super::monthly::maybe_copy_backup_to_monthly;
-use super::rcon::run_rcon_commands;
+use super::rcon::{is_connect_error, run_rcon_commands};
 use super::retention::cleanup_old_backups;
-use super::shared::{is_disk_full_error, rename_temp_to_backup, verify_zip_integrity};
+use super::shared::{
+    add_optional_file_to_zip, add_single_file_to_zip, is_disk_full_error, rename_temp_to_backup,
+    verify_zip_integrity, TempFileGuard,
+};
 pub async fn create_backup(job: &Job, app_data: &AppData) -> Result<u64> {
     log::info!("Starting backup for job: {}", job.name);
 
@@ -24,7 +26,7 @@ pub async fn create_backup(job: &Job, app_data: &AppData) -> Result<u64> {
             if let (Some(port), Some(password)) = (rcon.rcon_port, rcon.admin_password) {
                 log::info!("RCON: sending SaveWorld before ARK backup on 127.0.0.1:{}", port);
                 let password_clone = password.clone();
-                tokio::task::spawn_blocking(move || {
+                let save_result = tokio::task::spawn_blocking(move || {
                     run_rcon_commands(
                         "127.0.0.1".to_string(),
                         port,
@@ -33,9 +35,25 @@ pub async fn create_backup(job: &Job, app_data: &AppData) -> Result<u64> {
                     )
                 })
                 .await
-                .context("ARK SaveWorld RCON task failed")??;
-                log::info!("Waiting 3 seconds for ARK save to flush to disk...");
-                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                .context("ARK SaveWorld RCON task failed")?;
+                match save_result {
+                    Ok(()) => {
+                        log::info!("Waiting 3 seconds for ARK save to flush to disk...");
+                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    }
+                    // Nothing listening: the server is stopped, so the files on disk are already
+                    // final and safe to back up (this is the cleanest time to take a backup).
+                    Err(e) if is_connect_error(&e) => {
+                        log::warn!(
+                            "RCON: could not connect to 127.0.0.1:{} ({:#}); the server appears to be stopped. Backing up the saved files without SaveWorld.",
+                            port,
+                            e
+                        );
+                    }
+                    // Server is running but rejected the password or the save failed: don't back up
+                    // a world that may be mid-save.
+                    Err(e) => return Err(e.context("ARK SaveWorld before backup failed")),
+                }
             } else {
                 log::warn!(
                     "RCON is enabled in GameUserSettings.ini but RCONPort or ServerAdminPassword is missing; skipping SaveWorld"
@@ -97,14 +115,14 @@ pub async fn create_backup(job: &Job, app_data: &AppData) -> Result<u64> {
             }
 
             // Cleanup old backups after successful backup
-            cleanup_old_backups(&job.destination_dir, job.retention_days)?;
+            cleanup_old_backups(&job.destination_dir, &job.name, job.retention_days)?;
             Ok(file_size)
         }
         Err(e) if is_disk_full_error(&e) => {
             log::warn!("Backup failed due to insufficient disk space. Cleaning up old backups and retrying...");
             
             // Cleanup old backups to free space
-            cleanup_old_backups(&job.destination_dir, job.retention_days)
+            cleanup_old_backups(&job.destination_dir, &job.name, job.retention_days)
                 .context("Failed to cleanup old backups")?;
             
             log::info!("Retrying backup after cleanup...");
@@ -147,6 +165,7 @@ async fn attempt_backup(
     job: &Job,
     map: &crate::map::MapDefinition,
 ) -> Result<u64> {
+    let _temp_guard = TempFileGuard::new(temp_path);
     // Create ZIP file
     let file = fs::File::create(temp_path)
         .with_context(|| format!("Failed to create backup file: {}", temp_path.display()))?;
@@ -209,87 +228,43 @@ fn add_saves_to_zip(
     options: &FileOptions,
 ) -> Result<()> {
     if !saves_dir.exists() {
-        return Ok(());
+        anyhow::bail!("Saves directory does not exist: {}", saves_dir.display());
     }
 
     // Expected map file name: all maps have _WP suffix in the .ark file name
     let expected_map_file = &map.map_file_name;
+    let mut map_added = false;
 
     for entry in WalkDir::new(saves_dir).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
-        if path.is_file() {
-            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-
-            let should_include = match ext {
-                "ark" => {
-                    // For map files, only include exact match: "{MapName}_WP.ark"
-                    if include_map {
-                        file_name == expected_map_file
-                    } else {
-                        false
-                    }
-                },
-                "arkprofile" | "arktribe" => include_saves,
-                _ => false,
-            };
-
-            if should_include {
-                // Put all files in "SavedArks" folder in ZIP
-                let zip_path = format!("SavedArks/{}", file_name);
-
-                // Try to add file to ZIP, skip if locked or inaccessible
-                // Check if file can be opened and read before adding to ZIP
-                match fs::File::open(path) {
-                    Ok(mut file) => {
-                        let mut buffer = Vec::new();
-                        match file.read_to_end(&mut buffer) {
-                            Ok(_) => {
-                                // File is readable, now try to add to ZIP
-                                // Only start file entry if we successfully read the file
-                                match zip.start_file(zip_path.clone(), *options) {
-                                    Ok(_) => {
-                                        // Write the file data - if this fails, we need to handle it carefully
-                                        // The ZIP writer is now in a state where it expects data
-                                        if let Err(e) = zip.write_all(&buffer) {
-                                            let err_msg = format!("{}", e);
-                                            // If ZIP was closed, we can't continue
-                                            if err_msg.contains("closed") || err_msg.contains("finished") {
-                                                log::error!("ZIP writer was closed while writing file {}. This may indicate the ZIP was finalized prematurely or the underlying file was closed. Backup cannot continue.", path.display());
-                                                return Err(anyhow::anyhow!("ZIP writer was closed: {}", e));
-                                            }
-                                            // Other write errors - could be disk full, permission issues, etc.
-                                            log::error!("Failed to write file {} to ZIP: {}. This may indicate disk full, permission issues, or other I/O problems. Backup cannot continue.", path.display(), e);
-                                            return Err(anyhow::anyhow!("Failed to write file to ZIP: {}", e));
-                                        }
-                                        // File successfully added
-                                    }
-                                    Err(e) => {
-                                        // Check if ZIP was closed (this shouldn't happen normally)
-                                        let err_msg = format!("{}", e);
-                                        if err_msg.contains("closed") || err_msg.contains("finished") || err_msg.contains("already closed") {
-                                            log::error!("ZIP writer was closed unexpectedly while starting file entry for {}. This indicates the ZIP was finalized prematurely, possibly due to a previous error (disk full, I/O error, etc.). Cannot continue backup.", path.display());
-                                            return Err(anyhow::anyhow!("ZIP writer was closed: {}. This may indicate a previous error (disk full, I/O error) caused the ZIP to be finalized prematurely.", e));
-                                        }
-                                        // Other errors starting file entry - might be recoverable, but log as error
-                                        log::error!("Failed to start file entry for {} in ZIP: {}. This may indicate ZIP corruption or I/O issues.", path.display(), e);
-                                        return Err(anyhow::anyhow!("Failed to start file entry in ZIP: {}", e));
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                log::warn!("Failed to read file {} (may be locked by server): {}. Skipping.", path.display(), e);
-                                continue;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to open file {} (may be locked by server): {}. Skipping.", path.display(), e);
-                        continue;
-                    }
-                }
-            }
+        if !path.is_file() {
+            continue;
         }
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        // Put all files in "SavedArks" folder in ZIP
+        let zip_path = format!("SavedArks/{}", file_name);
+
+        match ext {
+            // The map save is the core of the backup: it must be included or the backup fails.
+            "ark" if include_map && file_name == expected_map_file => {
+                add_single_file_to_zip(zip, path, &zip_path, options)?;
+                map_added = true;
+            }
+            // Individual player/tribe files are skipped with a warning if locked.
+            "arkprofile" | "arktribe" if include_saves => {
+                add_optional_file_to_zip(zip, path, &zip_path, options)?;
+            }
+            _ => {}
+        }
+    }
+
+    if include_map && !map_added {
+        anyhow::bail!(
+            "Map save file {} was not found in {}. Check the map's file name in Settings.",
+            expected_map_file,
+            saves_dir.display()
+        );
     }
 
     Ok(())
@@ -300,84 +275,13 @@ fn add_ini_files_to_zip(
     config_dir: &Path,
     options: &FileOptions,
 ) -> Result<()> {
-    let game_ini = config_dir.join("Game.ini");
-    let game_user_settings_ini = config_dir.join("GameUserSettings.ini");
-
-    if game_ini.exists() {
-        // Check if file can be opened before adding to ZIP
-        match fs::File::open(&game_ini) {
-            Ok(mut file) => {
-                let mut buffer = Vec::new();
-                match file.read_to_end(&mut buffer) {
-                    Ok(_) => {
-                        match zip.start_file("INI Settings/Game.ini", *options) {
-                            Ok(_) => {
-                                if let Err(e) = zip.write_all(&buffer) {
-                                    let err_msg = format!("{}", e);
-                                    if err_msg.contains("closed") || err_msg.contains("finished") {
-                                        return Err(anyhow::anyhow!("ZIP writer was closed while adding Game.ini: {}", e));
-                                    }
-                                    return Err(anyhow::anyhow!("Failed to write Game.ini to ZIP: {}", e));
-                                }
-                            }
-                            Err(e) => {
-                                let err_msg = format!("{}", e);
-                                if err_msg.contains("closed") || err_msg.contains("finished") {
-                                    return Err(anyhow::anyhow!("ZIP writer was closed while starting Game.ini entry: {}", e));
-                                }
-                                return Err(anyhow::anyhow!("Failed to start Game.ini entry in ZIP: {}", e));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to read Game.ini: {}. Skipping.", e);
-                    }
-                }
-            }
-            Err(e) => {
-                log::warn!("Failed to open Game.ini: {}. Skipping.", e);
-            }
-        }
-    }
-
-    if game_user_settings_ini.exists() {
-        // Check if file can be opened before adding to ZIP
-        match fs::File::open(&game_user_settings_ini) {
-            Ok(mut file) => {
-                let mut buffer = Vec::new();
-                match file.read_to_end(&mut buffer) {
-                    Ok(_) => {
-                        match zip.start_file("INI Settings/GameUserSettings.ini", *options) {
-                            Ok(_) => {
-                                if let Err(e) = zip.write_all(&buffer) {
-                                    let err_msg = format!("{}", e);
-                                    if err_msg.contains("closed") || err_msg.contains("finished") {
-                                        return Err(anyhow::anyhow!("ZIP writer was closed while adding GameUserSettings.ini: {}", e));
-                                    }
-                                    return Err(anyhow::anyhow!("Failed to write GameUserSettings.ini to ZIP: {}", e));
-                                }
-                            }
-                            Err(e) => {
-                                let err_msg = format!("{}", e);
-                                if err_msg.contains("closed") || err_msg.contains("finished") {
-                                    return Err(anyhow::anyhow!("ZIP writer was closed while starting GameUserSettings.ini entry: {}", e));
-                                }
-                                return Err(anyhow::anyhow!("Failed to start GameUserSettings.ini entry in ZIP: {}", e));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to read GameUserSettings.ini: {}. Skipping.", e);
-                    }
-                }
-            }
-            Err(e) => {
-                log::warn!("Failed to open GameUserSettings.ini: {}. Skipping.", e);
-            }
-        }
-    }
-
-    Ok(())
+    add_single_file_to_zip(zip, &config_dir.join("Game.ini"), "INI Settings/Game.ini", options)?;
+    add_single_file_to_zip(
+        zip,
+        &config_dir.join("GameUserSettings.ini"),
+        "INI Settings/GameUserSettings.ini",
+        options,
+    )
 }
 
 fn add_plugin_configs_to_zip(
@@ -401,43 +305,60 @@ fn add_plugin_configs_to_zip(
             
             // Put in "Plugin" folder with plugin name: Plugin/{plugin_name}/config.json
             let zip_path = format!("Plugin/{}/config.json", plugin_name);
-
-            // Check if file can be opened before adding to ZIP
-            match fs::File::open(path) {
-                Ok(mut file) => {
-                    let mut buffer = Vec::new();
-                    match file.read_to_end(&mut buffer) {
-                        Ok(_) => {
-                            match zip.start_file(zip_path, *options) {
-                                Ok(_) => {
-                                    if let Err(e) = zip.write_all(&buffer) {
-                                        let err_msg = format!("{}", e);
-                                        if err_msg.contains("closed") || err_msg.contains("finished") {
-                                            return Err(anyhow::anyhow!("ZIP writer was closed while adding config.json: {}", e));
-                                        }
-                                        return Err(anyhow::anyhow!("Failed to write config.json to ZIP: {}", e));
-                                    }
-                                }
-                                Err(e) => {
-                                    let err_msg = format!("{}", e);
-                                    if err_msg.contains("closed") || err_msg.contains("finished") {
-                                        return Err(anyhow::anyhow!("ZIP writer was closed while starting config.json entry: {}", e));
-                                    }
-                                    return Err(anyhow::anyhow!("Failed to start config.json entry in ZIP: {}", e));
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to read config.json {}: {}. Skipping.", path.display(), e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Failed to open config.json {}: {}. Skipping.", path.display(), e);
-                }
-            }
+            add_optional_file_to_zip(zip, path, &zip_path, options)?;
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::MapDefinition;
+
+    fn island() -> MapDefinition {
+        MapDefinition {
+            id: "TheIsland".into(),
+            display_name: "The Island".into(),
+            folder_name: "TheIsland_WP".into(),
+            map_file_name: "TheIsland_WP.ark".into(),
+        }
+    }
+
+    fn zip_entries(path: &Path) -> Vec<String> {
+        let archive = zip::ZipArchive::new(fs::File::open(path).unwrap()).unwrap();
+        archive.file_names().map(String::from).collect()
+    }
+
+    #[test]
+    fn saves_include_map_and_profiles() {
+        let temp = tempfile::tempdir().unwrap();
+        let saves = temp.path().join("saves");
+        fs::create_dir_all(&saves).unwrap();
+        fs::write(saves.join("TheIsland_WP.ark"), b"map").unwrap();
+        fs::write(saves.join("0123.arkprofile"), b"profile").unwrap();
+        fs::write(saves.join("TheIsland_WP_old.ark"), b"older map backup").unwrap();
+
+        let zip_path = temp.path().join("out.zip");
+        let mut zip = ZipWriter::new(fs::File::create(&zip_path).unwrap());
+        add_saves_to_zip(&mut zip, &saves, true, true, &island(), &FileOptions::default()).unwrap();
+        zip.finish().unwrap();
+
+        let mut entries = zip_entries(&zip_path);
+        entries.sort();
+        assert_eq!(entries, vec!["SavedArks/0123.arkprofile", "SavedArks/TheIsland_WP.ark"]);
+    }
+
+    #[test]
+    fn missing_map_file_fails_backup() {
+        let temp = tempfile::tempdir().unwrap();
+        let saves = temp.path().join("saves");
+        fs::create_dir_all(&saves).unwrap();
+        fs::write(saves.join("0123.arkprofile"), b"profile").unwrap();
+
+        let mut zip = ZipWriter::new(fs::File::create(temp.path().join("out.zip")).unwrap());
+        let err = add_saves_to_zip(&mut zip, &saves, true, true, &island(), &FileOptions::default()).unwrap_err();
+        assert!(err.to_string().contains("TheIsland_WP.ark was not found"), "{}", err);
+    }
 }
