@@ -5,6 +5,7 @@ mod jobs;
 mod logs;
 mod plugins;
 mod shell;
+mod system;
 mod updater;
 
 pub use backup::*;
@@ -14,4 +15,5 @@ pub use jobs::*;
 pub use logs::*;
 pub use plugins::*;
 pub use shell::*;
+pub use system::*;
 pub use updater::*;

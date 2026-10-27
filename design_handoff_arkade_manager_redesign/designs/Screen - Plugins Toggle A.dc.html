@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#020F22;}*{box-sizing:border-box;}a{color:#1FE3F5;}a:hover{color:#8FF3FB;}</style>
+</helmet>
+<div style="width:1280px;height:800px;display:flex;background:#020F22;font-family:Manrope,sans-serif;color:#F2F0F8;overflow:hidden;">
+  <dc-import name="ArkSidebar" active="plugins" hint-size="232px,800px"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:26px 32px 0;">
+    <h1 style="margin:0;font-size:21px;font-weight:800;letter-spacing:-.01em;">Plugins</h1>
+    <p style="margin:4px 0 0;font-size:13px;color:#A9A6C4;">Disabled plugin folders carry an <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#D9D7EA;">_OFF</span> suffix. Restart the server to apply.</p>
+    <div style="display:flex;gap:24px;margin-top:18px;border-bottom:1px solid rgba(255,255,255,.08);font-size:13.5px;font-weight:700;">
+      <span style="padding:0 0 10px;color:#A9A6C4;">Install</span>
+      <span style="padding:0 0 10px;border-bottom:2px solid #1FE3F5;color:#F2F0F8;">Enable / disable</span>
+    </div>
+
+    <div style="flex:1;min-height:0;display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px;margin-top:18px;">
+      <div style="display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.08);border-bottom:none;border-radius:8px 8px 0 0;background:#051326;">
+        <div style="padding:10px;border-bottom:1px solid rgba(255,255,255,.07);">
+          <div style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:#030C1C;color:#8A85AB;font-size:13px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>Find server</div>
+        </div>
+        <sc-for list="{{ servers }}" as="s" hint-placeholder-count="6">
+          <div style="position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px;height:52px;padding:0 14px;border-bottom:1px solid rgba(255,255,255,.05);background:{{ s.bg }};">
+            <sc-if value="{{ s.sel }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:0;top:10px;bottom:10px;width:2px;background:#1FE3F5;"></span></sc-if>
+            <div><div style="font-size:13px;font-weight:600;color:{{ s.nc }};">{{ s.n }}</div><div style="font-size:11.5px;color:#8A85AB;margin-top:1px;">{{ s.c }}</div></div>
+            <span style="font-size:12px;font-weight:600;color:#A9A6C4;font-variant-numeric:tabular-nums;">{{ s.count }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display:flex;flex-direction:column;min-height:0;border:1px solid rgba(255,255,255,.08);border-bottom:none;border-radius:8px 8px 0 0;background:#051326;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.07);">
+          <div>
+            <div style="font-size:15px;font-weight:700;">lna-center</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#8A85AB;margin-top:2px;">…\lna-center\ShooterGame\Binaries\Win64\ArkApi\Plugins</div>
+          </div>
+          <div style="display:flex;height:30px;padding:3px;border-radius:6px;background:#030C1C;border:1px solid rgba(255,255,255,.1);gap:2px;font-size:12px;font-weight:600;">
+            <span style="display:flex;align-items:center;padding:0 10px;border-radius:4px;background:#0C2340;color:#F2F0F8;">All 9</span>
+            <span style="display:flex;align-items:center;padding:0 10px;color:#A9A6C4;">On 7</span>
+            <span style="display:flex;align-items:center;padding:0 10px;color:#A9A6C4;">Off 2</span>
+          </div>
+        </div>
+        <div style="flex:1;min-height:0;">
+          <sc-for list="{{ folders }}" as="f" hint-placeholder-count="9">
+            <div style="display:grid;grid-template-columns:44px minmax(0,1fr) 220px 90px;align-items:center;height:46px;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.05);background:{{ f.bg }};">
+              <span style="width:30px;height:18px;border-radius:9px;position:relative;background:{{ f.track }};"><span style="position:absolute;top:2px;left:{{ f.knob }};width:14px;height:14px;border-radius:50%;background:{{ f.knobc }};"></span></span>
+              <span style="font-size:13.5px;font-weight:600;color:{{ f.nc }};">{{ f.n }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A85AB;">{{ f.dir }}</span>
+              <span style="text-align:right;font-size:12px;font-weight:700;color:#F5C8FA;">{{ f.pending }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;height:58px;padding:0 16px;border-top:1px solid rgba(255,255,255,.08);background:#071A33;">
+          <span style="width:8px;height:8px;border-radius:50%;background:#DD3DEE;"></span>
+          <span style="font-size:13.5px;font-weight:700;">2 pending changes</span>
+          <span style="font-size:12.5px;color:#A9A6C4;">KillFeed off, VoteRewards on</span>
+          <div style="flex:1;"></div>
+          <button style="height:34px;padding:0 12px;border-radius:6px;border:none;background:transparent;color:#A9A6C4;font:600 13px Manrope;">Discard</button>
+          <button style="height:34px;padding:0 13px;border-radius:6px;border:1px solid rgba(255,255,255,.14);background:#061730;color:#D9D7EA;font:600 13px Manrope;">Apply to all 6 servers</button>
+          <button style="height:34px;padding:0 15px;border-radius:6px;border:none;background:#DD3DEE;color:#16031C;font:800 13px Manrope;">Apply to lna-center</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:800}}">
+class Component extends DCLogic {
+  renderVals() {
+    const servers = [['lna-theisland', 'ASA Legacy', '9 / 9'], ['lna-center', 'ASA Legacy', '7 / 9', 1], ['lna-lostcolony-2', 'ASA Legacy', '6 / 7'], ['omega-astraeos', 'ASA Omega', '4 / 4'], ['omega-extinction', 'ASA Omega', '3 / 4'], ['omega-scorched', 'ASA Omega', '4 / 4']]
+      .map(([n, c, count, sel]) => ({ n, c, count, sel: !!sel, bg: sel ? 'rgba(31,227,245,.07)' : 'transparent', nc: sel ? '#F2F0F8' : '#D9D7EA' }));
+    const F = (n, on, was) => {
+      const pend = was !== undefined && was !== on;
+      return { n, dir: on ? n : n + '_OFF', pending: pend ? (on ? 'turning on' : 'turning off') : '',
+        track: on ? '#1FE3F5' : '#1A2C47', knob: on ? '14px' : '2px', knobc: on ? '#020F22' : '#8A85AB',
+        nc: on ? '#F2F0F8' : '#A9A6C4', bg: pend ? 'rgba(221,61,238,.06)' : 'transparent' };
+    };
+    return { servers, folders: [F('ArkShop', true), F('Permissions', true), F('DiscordBridge', true), F('KillFeed', false, true), F('TribeLimiter', true), F('VoteRewards', true, false), F('AutoDinoWipe', false), F('ServerAnnouncer', true), F('DeathLoot', false)] };
+  }
+}
+</script>
+</body>
+</html>

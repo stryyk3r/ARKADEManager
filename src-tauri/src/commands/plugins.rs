@@ -74,6 +74,7 @@ pub async fn discover_plugin_destinations(
 pub async fn install_plugins(
     source_plugin_paths: Vec<String>,
     destination_plugin_paths: Vec<String>,
+    keep_existing_config: Option<bool>,
     state: tauri::State<'_, AppState>,
 ) -> Result<plugins::InstallResult, String> {
     log::info!(
@@ -88,6 +89,7 @@ pub async fn install_plugins(
     plugins::install_plugins(
         source_plugin_paths,
         destination_plugin_paths,
+        keep_existing_config.unwrap_or(false),
         &plugins::allowed_plugin_dir_keys(&roots),
     )
 }

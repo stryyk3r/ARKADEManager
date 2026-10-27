@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="width:232px;height:100%;flex:none;display:flex;flex-direction:column;background:#010A18;border-right:1px solid rgba(255,255,255,.06);padding:18px 12px 14px;box-sizing:border-box;font-family:Manrope,sans-serif;">
+  <div style="display:flex;align-items:center;gap:10px;padding:0 8px 22px;">
+    <img src="public/Icon_ArkadeLogo.png" alt="" style="width:30px;height:30px;object-fit:contain;">
+    <div style="display:flex;flex-direction:column;gap:1px;">
+      <span style="font-size:13px;font-weight:800;color:#F2F0F8;letter-spacing:.01em;">ARKADE Manager</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8A85AB;">v2.6.1</span>
+    </div>
+  </div>
+  <div style="font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6F6B92;padding:0 10px 8px;">Workspace</div>
+  <div style="display:flex;flex-direction:column;gap:2px;">
+    <div style="position:relative;display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:6px;font-size:13.5px;font-weight:600;background:{{ bgB }};color:{{ fgB }};">
+      <sc-if value="{{ aB }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:-12px;top:9px;bottom:9px;width:2px;background:#1FE3F5;"></span></sc-if>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 8v13H3V8"></path><path d="M1 3h22v5H1z"></path><path d="M10 12h4"></path></svg>Backups
+    </div>
+    <div style="position:relative;display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:6px;font-size:13.5px;font-weight:600;background:{{ bgL }};color:{{ fgL }};">
+      <sc-if value="{{ aL }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:-12px;top:9px;bottom:9px;width:2px;background:#1FE3F5;"></span></sc-if>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>Logs
+    </div>
+    <div style="position:relative;display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:6px;font-size:13.5px;font-weight:600;background:{{ bgP }};color:{{ fgP }};">
+      <sc-if value="{{ aP }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:-12px;top:9px;bottom:9px;width:2px;background:#1FE3F5;"></span></sc-if>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4"></path></svg>Plugins
+    </div>
+    <div style="position:relative;display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:6px;font-size:13.5px;font-weight:600;background:{{ bgD }};color:{{ fgD }};">
+      <sc-if value="{{ aD }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:-12px;top:9px;bottom:9px;width:2px;background:#1FE3F5;"></span></sc-if>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>Data Lookup
+    </div>
+  </div>
+  <div style="font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6F6B92;padding:22px 10px 8px;">System</div>
+  <div style="position:relative;display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:6px;font-size:13.5px;font-weight:600;background:{{ bgS }};color:{{ fgS }};">
+    <sc-if value="{{ aS }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:-12px;top:9px;bottom:9px;width:2px;background:#1FE3F5;"></span></sc-if>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"></path></svg>Settings
+  </div>
+  <div style="margin-top:auto;border-top:1px solid rgba(255,255,255,.07);padding:14px 10px 0;display:flex;flex-direction:column;gap:7px;font-size:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
+      <span style="font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6F6B92;">Scheduler</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;font-weight:700;color:#34d399;"><span style="width:6px;height:6px;border-radius:50%;background:#34d399;"></span>Running</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;gap:8px;"><span style="color:#8A85AB;">Current</span><span style="color:#F2F0F8;font-weight:600;">LNA_TheIsland</span></div>
+    <div style="display:flex;justify-content:space-between;gap:8px;"><span style="color:#8A85AB;">Queue</span><span style="color:#F2F0F8;font-weight:600;">0</span></div>
+    <div style="display:flex;justify-content:space-between;gap:8px;"><span style="color:#8A85AB;">Last tick</span><span style="color:#F2F0F8;font-weight:600;font-variant-numeric:tabular-nums;">8:10:40 PM</span></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:232,&quot;height&quot;:800},&quot;active&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;backups&quot;,&quot;logs&quot;,&quot;plugins&quot;,&quot;lookup&quot;,&quot;settings&quot;],&quot;default&quot;:&quot;backups&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const a = this.props.active ?? 'backups';
+    const v = {};
+    [['B','backups'],['L','logs'],['P','plugins'],['D','lookup'],['S','settings']].forEach(([k, key]) => {
+      const on = a === key;
+      v['a' + k] = on;
+      v['bg' + k] = on ? 'rgba(31,227,245,.08)' : 'transparent';
+      v['fg' + k] = on ? '#F2F0F8' : '#A9A6C4';
+    });
+    return v;
+  }
+}
+</script>
+</body>
+</html>

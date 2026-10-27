@@ -127,6 +127,10 @@ impl AppData {
         &self.logs_dir
     }
 
+    pub fn get_config_path(&self) -> &Path {
+        &self.config_path
+    }
+
     #[allow(dead_code)]
     pub fn get_data_dir(&self) -> &Path {
         &self._data_dir
@@ -183,11 +187,19 @@ fn write_atomic(path: &Path, content: &[u8]) -> Result<()> {
     }
 }
 
-pub fn read_logs(lines: usize) -> Result<String> {
-    let app_data = AppData::new()?;
-    let logs_dir = app_data.get_logs_dir();
-    
-    // Get all log files, sorted by modification time
+/// File name of the log this process writes to, set once at startup.
+pub static CURRENT_LOG_FILE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LogFileInfo {
+    pub name: String,
+    pub size: u64,
+    pub modified: Option<String>,
+    pub current: bool,
+}
+
+/// `.log` files in the logs folder, newest first.
+fn log_file_entries(logs_dir: &Path) -> Result<Vec<(fs::DirEntry, std::time::SystemTime)>> {
     let mut log_files: Vec<_> = fs::read_dir(logs_dir)?
         .filter_map(|e| e.ok())
         .filter(|e| {
@@ -196,23 +208,63 @@ pub fn read_logs(lines: usize) -> Result<String> {
                 .map(|s| s == "log")
                 .unwrap_or(false)
         })
+        .map(|e| {
+            let modified = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            (e, modified)
+        })
         .collect();
-    
-    log_files.sort_by_key(|e| {
-        e.metadata()
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-    });
-    
-    // Read from most recent log file
-    if let Some(most_recent) = log_files.last() {
-        let content = fs::read_to_string(most_recent.path())?;
-        let all_lines: Vec<&str> = content.lines().collect();
-        let start = all_lines.len().saturating_sub(lines);
-        Ok(all_lines[start..].join("\n"))
-    } else {
-        Ok(String::new())
-    }
+    log_files.sort_by(|a, b| b.1.cmp(&a.1));
+    Ok(log_files)
+}
+
+pub fn list_log_files() -> Result<Vec<LogFileInfo>> {
+    let app_data = AppData::new()?;
+    let current = CURRENT_LOG_FILE.get();
+    Ok(log_file_entries(app_data.get_logs_dir())?
+        .into_iter()
+        .map(|(entry, modified)| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            LogFileInfo {
+                current: current.is_some_and(|c| *c == name),
+                size: entry.metadata().map(|m| m.len()).unwrap_or(0),
+                modified: Some(chrono::DateTime::<chrono::Utc>::from(modified).to_rfc3339()),
+                name,
+            }
+        })
+        .collect())
+}
+
+/// Read the last `lines` lines of a log file. `file` must be the bare name of a `.log` file in the
+/// logs folder; when omitted, the current (or most recent) log is read.
+pub fn read_logs(lines: usize, file: Option<&str>) -> Result<String> {
+    let app_data = AppData::new()?;
+    let logs_dir = app_data.get_logs_dir();
+
+    let path = match file.map(str::trim).filter(|f| !f.is_empty()) {
+        Some(name) => {
+            let is_plain = Path::new(name).file_name().and_then(|n| n.to_str()) == Some(name);
+            if !is_plain || !name.ends_with(".log") {
+                anyhow::bail!("Invalid log file name: {}", name);
+            }
+            logs_dir.join(name)
+        }
+        None => match CURRENT_LOG_FILE.get() {
+            Some(current) if logs_dir.join(current).is_file() => logs_dir.join(current),
+            _ => match log_file_entries(logs_dir)?.into_iter().next() {
+                Some((entry, _)) => entry.path(),
+                None => return Ok(String::new()),
+            },
+        },
+    };
+
+    let content = fs::read_to_string(&path)
+        .with_context(|| format!("Failed to read log file: {}", path.display()))?;
+    let all_lines: Vec<&str> = content.lines().collect();
+    let start = all_lines.len().saturating_sub(lines);
+    Ok(all_lines[start..].join("\n"))
 }
 
 #[cfg(test)]

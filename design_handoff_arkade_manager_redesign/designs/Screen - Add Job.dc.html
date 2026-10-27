@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#020F22;}*{box-sizing:border-box;}a{color:#1FE3F5;}a:hover{color:#8FF3FB;}</style>
+</helmet>
+<div style="width:1280px;height:800px;position:relative;overflow:hidden;font-family:Manrope,sans-serif;color:#F2F0F8;">
+  <dc-import name="Screen - Backups" show-menu="{{ false }}" hint-size="1280px,800px"></dc-import>
+  <div style="position:absolute;inset:0;background:rgba(1,6,15,.66);display:flex;align-items:center;justify-content:center;">
+    <div style="width:780px;height:520px;display:flex;border-radius:10px;overflow:hidden;background:#06152B;border:1px solid rgba(255,255,255,.1);box-shadow:0 30px 80px rgba(0,0,0,.55);">
+      <div style="width:236px;flex:none;background:#041021;border-right:1px solid rgba(255,255,255,.07);padding:22px 18px;display:flex;flex-direction:column;">
+        <div style="font-size:15px;font-weight:800;">New backup job</div>
+        <div style="display:flex;flex-direction:column;margin-top:22px;">
+          <sc-for list="{{ steps }}" as="s" hint-placeholder-count="5">
+            <div style="display:flex;gap:11px;">
+              <div style="display:flex;flex-direction:column;align-items:center;">
+                <span style="width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;background:{{ s.dotBg }};color:{{ s.dotC }};border:1.5px solid {{ s.dotBd }};">{{ s.mark }}</span>
+                <span style="width:1.5px;flex:1;min-height:14px;background:{{ s.line }};"></span>
+              </div>
+              <div style="padding:2px 0 14px;min-width:0;">
+                <div style="font-size:13px;font-weight:700;color:{{ s.c }};">{{ s.t }}</div>
+                <div style="font-size:11.5px;color:#8A85AB;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:{{ s.f }};">{{ s.v }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:22px 24px 0;">
+          <div>
+            <div style="font-size:12px;font-weight:700;color:#8A85AB;">Step 3 of 5</div>
+            <div style="font-size:18px;font-weight:800;margin-top:4px;">Where should backups go?</div>
+          </div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A9A6C4" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+        </div>
+        <div style="flex:1;padding:22px 24px;display:flex;flex-direction:column;gap:18px;">
+          <div>
+            <div style="font-size:12px;font-weight:700;color:#A9A6C4;margin-bottom:6px;">Destination folder</div>
+            <div style="display:flex;gap:8px;"><div style="flex:1;height:38px;display:flex;align-items:center;padding:0 11px;border-radius:6px;border:1px solid rgba(31,227,245,.55);background:#030C1C;box-shadow:0 0 0 3px rgba(31,227,245,.1);font-family:'JetBrains Mono',monospace;font-size:12.5px;">D:\Backups\ASA\LNA_Center</div><button style="height:38px;padding:0 13px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:#061730;color:#D9D7EA;font:600 13px Manrope;">Browse</button></div>
+            <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:#A9A6C4;"><span style="color:#34d399;font-weight:600;">Writable</span><span>1.21 TB free on D:</span><span>Same drive as FOTM, monthly copies are hard links</span></div>
+          </div>
+          <div style="padding:14px;border-radius:8px;background:#030C1C;border:1px solid rgba(255,255,255,.07);">
+            <div style="font-size:12px;font-weight:700;color:#A9A6C4;">Files will be named</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#E6E4F2;margin-top:6px;">LNA_Center_<span style="color:#1FE3F5;">20261027_203148</span>.zip</div>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:700;color:#A9A6C4;margin-bottom:8px;">Recently used</div>
+            <div style="display:flex;flex-direction:column;gap:4px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#D9D7EA;">
+              <span style="padding:6px 8px;border-radius:4px;background:rgba(255,255,255,.03);">D:\Backups\ASA\LNA_TheIsland</span>
+              <span style="padding:6px 8px;border-radius:4px;background:rgba(255,255,255,.03);">D:\Backups\ASA\LNA_LostColony_2</span>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:14px 24px;border-top:1px solid rgba(255,255,255,.08);">
+          <button style="height:34px;padding:0 4px;border:none;background:transparent;color:#A9A6C4;font:600 13px Manrope;">Cancel</button>
+          <div style="flex:1;"></div>
+          <button style="height:34px;padding:0 13px;border-radius:6px;border:1px solid rgba(255,255,255,.14);background:#061730;color:#D9D7EA;font:600 13px Manrope;">Back</button>
+          <button style="height:34px;padding:0 16px;border-radius:6px;border:none;background:#DD3DEE;color:#16031C;font:800 13px Manrope;">Next: Map</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:800}}">
+class Component extends DCLogic {
+  renderVals() {
+    const cur = 3;
+    const data = [['Game', 'ARK: Survival Ascended', 0], ['Server root', 'C:\\arkservers\\asaservers\\lna-center', 1], ['Destination', 'D:\\Backups\\ASA\\LNA_Center', 1], ['Map', 'Not set', 0], ['Schedule', 'Not set', 0]];
+    return { steps: data.map(([t, v, mono], i) => {
+      const n = i + 1, done = n < cur, act = n === cur;
+      return { t, v: n > cur ? '' : v, f: mono ? "'JetBrains Mono',monospace" : 'Manrope', mark: done ? '✓' : String(n),
+        dotBg: done ? '#1FE3F5' : 'transparent', dotC: done ? '#020F22' : act ? '#1FE3F5' : '#8A85AB', dotBd: done || act ? '#1FE3F5' : '#3A3860',
+        line: n === 5 ? 'transparent' : done ? 'rgba(31,227,245,.5)' : 'rgba(255,255,255,.1)', c: n > cur ? '#8A85AB' : '#F2F0F8' };
+    })};
+  }
+}
+</script>
+</body>
+</html>

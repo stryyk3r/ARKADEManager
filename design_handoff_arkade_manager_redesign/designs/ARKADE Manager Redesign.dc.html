@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#00050C;}*{box-sizing:border-box;}a{color:#1FE3F5;text-decoration:none;}a:hover{color:#8FF3FB;}</style>
+</helmet>
+<section id="turn-1" style="padding:80px;font-family:Manrope,sans-serif;color:#F2F0F8;background:#00050C;display:flex;flex-direction:column;gap:96px;width:max-content;">
+  <div style="max-width:900px;">
+    <div style="font-size:13px;font-weight:700;color:#8A85AB;letter-spacing:.08em;text-transform:uppercase;">ARKADE Manager · UI redesign · round 1</div>
+    <h1 style="margin:10px 0 0;font-size:40px;font-weight:800;letter-spacing:-.02em;">All screens</h1>
+    <p style="margin:12px 0 0;font-size:17px;line-height:1.55;color:#A9A6C4;">Flat navy surfaces, hairline borders, no gradients or glow. Cyan marks state and selection, magenta is kept for the one primary action per screen. Paths, IDs and logs are set in JetBrains Mono. Chosen directions: 1f, 1h, 1j.</p>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:20px;">
+    <div style="font-size:22px;font-weight:800;">Backups</div>
+    <div style="display:flex;gap:64px;flex-wrap:wrap;width:2688px;">
+      <div id="1a" style="display:flex;flex-direction:column;gap:12px;"><div style="display:flex;align-items:center;gap:10px;"><span style="padding:3px 8px;border-radius:4px;background:#1FE3F5;color:#020F22;font-size:13px;font-weight:800;">1a</span><span style="font-size:15px;font-weight:700;">Jobs, grouped and collapsible</span><span style="font-size:13px;color:#8A85AB;">Click a group header. Row menu shown open.</span></div><div style="border-radius:8px;overflow:hidden;outline:1px solid rgba(255,255,255,.08);"><dc-import name="Screen - Backups" hint-size="1280px,800px"></dc-import></div></div>
+      <div id="1b" style="display:flex;flex-direction:column;gap:12px;"><div style="display:flex;align-items:center;gap:10px;"><span style="padding:3px 8px;border-radius:4px;background:#1FE3F5;color:#020F22;font-size:13px;font-weight:800;">1b</span><span style="font-size:15px;font-weight:700;">Edit job drawer</span><span style="font-size:13px;color:#8A85AB;">Replaces the hidden form below the table.</span></div><div style="border-radius:8px;overflow:hidden;outline:1px solid rgba(255,255,255,.08);"><dc-import name="Screen - Edit Job" hint-size="1280px,800px"></dc-import></div></div>
+      <div id="1c" style="display:flex;flex-direction:column;gap:12px;"><div style="display:flex;align-items:center;gap:10px;"><span style="padding:3px 8px;border-radius:4px;background:#1FE3F5;color:#020F22;font-size:13px;font-weight:800;">1c</span><span style="font-size:15px;font-weight:700;">Add job wizard</span><span style="font-size:13px;color:#8A85AB;">Step rail keeps earlier answers visible.</span></div><div style="border-radius:8px;overflow:hidden;outline:1px solid rgba(255,255,255,.08);"><dc-import name="Screen - Add Job" hint-size="1280px,800px"></dc-import></div></div>
+      <div id="1d" style="display:flex;flex-direction:column;gap:12px;"><div style="display:flex;align-items:center;gap:10px;"><span style="padding:3px 8px;border-radius:4px;background:#1FE3F5;color:#020F22;font-size:13px;font-weight:800;">1d</span><span style="font-size:15px;font-weight:700;">Monthly status</span><span style="font-size:13px;color:#8A85AB;">Per-job copies for the current month.</span></div><div style="border-radius:8px;overflow:hidden;outline:1px solid rgba(255,255,255,.08);"><dc-import name="Screen - Monthly Status" hint-size="1280px,800px"></dc-import></div></div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:20px;">
+    <div style="font-size:22px;font-weight:800;">Logs</div>
+    <div id="1e" style="display:flex;flex-direction:column;gap:12px;"><div style="display:flex;align-items:center;gap:10px;"><span style="padding:3px 8px;border-radius:4px;background:#1FE3F5;color:#020F22;font-size:13px;font-weight:800;">1e</span><span style="font-size:15px;font-weight:700;">Columned log viewer</span><span style="font-size:13px;color:#8A85AB;">Level filter with counts, warnings and errors striped, error chains on their own lines.</span></div><div style="border-radius:8px;overflow:hidden;outline:1px solid rgba(255,255,255,.08);width:1280px;"><dc-import name="Screen - Logs" hint-size="1280px,800px"></dc-import></div></div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:20px;">
+    <div style="font-size:22px;font-weight:800;">Plugins · Install</div>
+    <div style="display:flex;gap:64px;">
+      <div id="1f" style="display:flex;flex-direction:column;gap:12px;"><div style="display:flex;align-items:center;gap:10px;"><span style="padding:3px 8px;border-radius:4px;background:#1FE3F5;color:#020F22;font-size:13px;font-weight:800;">1f</span><span style="font-size:15px;font-weight:700;">Source → servers → review</span><span style="font-size:13px;color:#8A85AB;">Three steps left to right, review lists every install.</span></div><div style="border-radius:8px;overflow:hidden;outline:1px solid rgba(255,255,255,.08);"><dc-import name="Screen - Plugins Install A" hint-size="1280px,800px"></dc-import></div></div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:20px;">
+    <div style="font-size:22px;font-weight:800;">Plugins · Enable / disable</div>
+    <div style="display:flex;gap:64px;">
+      <div id="1h" style="display:flex;flex-direction:column;gap:12px;"><div style="display:flex;align-items:center;gap:10px;"><span style="padding:3px 8px;border-radius:4px;background:#1FE3F5;color:#020F22;font-size:13px;font-weight:800;">1h</span><span style="font-size:15px;font-weight:700;">Server list + switches</span><span style="font-size:13px;color:#8A85AB;">Changes stage first, then apply to one or all servers.</span></div><div style="border-radius:8px;overflow:hidden;outline:1px solid rgba(255,255,255,.08);"><dc-import name="Screen - Plugins Toggle A" hint-size="1280px,800px"></dc-import></div></div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:20px;">
+    <div style="font-size:22px;font-weight:800;">Data Lookup</div>
+    <div style="display:flex;gap:64px;">
+      <div id="1j" style="display:flex;flex-direction:column;gap:12px;"><div style="display:flex;align-items:center;gap:10px;"><span style="padding:3px 8px;border-radius:4px;background:#1FE3F5;color:#020F22;font-size:13px;font-weight:800;">1j</span><span style="font-size:15px;font-weight:700;">Search bar + results table</span><span style="font-size:13px;color:#8A85AB;">ID validated as you type, selection bar for delete.</span></div><div style="border-radius:8px;overflow:hidden;outline:1px solid rgba(255,255,255,.08);"><dc-import name="Screen - Data Lookup A" hint-size="1280px,800px"></dc-import></div></div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:20px;">
+    <div style="font-size:22px;font-weight:800;">Settings</div>
+    <div id="1l" style="display:flex;flex-direction:column;gap:12px;"><div style="display:flex;align-items:center;gap:10px;"><span style="padding:3px 8px;border-radius:4px;background:#1FE3F5;color:#020F22;font-size:13px;font-weight:800;">1l</span><span style="font-size:15px;font-weight:700;">Sectioned settings</span><span style="font-size:13px;color:#8A85AB;">Directory checks inline, maps as an editable table.</span></div><div style="border-radius:8px;overflow:hidden;outline:1px solid rgba(255,255,255,.08);width:1280px;"><dc-import name="Screen - Settings" hint-size="1280px,1180px"></dc-import></div></div>
+  </div>
+</section>
+</x-dc>
+</body>
+</html>

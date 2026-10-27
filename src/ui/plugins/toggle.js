@@ -1,330 +1,255 @@
 import { invoke } from '@tauri-apps/api/core';
-import { confirm } from '@tauri-apps/plugin-dialog';
 import { state } from '../../state.js';
-import { escapeHtml } from '../../utils/dom.js';
+import { escapeHtml, onSegmentedChange, setSegmented, setButtonBusy } from '../../utils/dom.js';
+import { basename, shortenPath, plural } from '../../utils/format.js';
+import { confirmDialog, listHtml, toast } from '../feedback.js';
+import { clusterForServer, pluginsDirFor } from './servers.js';
 
-export function initAdminSelect(selectEl) {
-  if (!selectEl || selectEl.dataset.adminSelectWired === 'true') return;
-  selectEl.dataset.adminSelectWired = 'true';
-  selectEl.classList.add('admin-select-native');
+const $ = (id) => document.getElementById(id);
 
-  const wrap = document.createElement('div');
-  wrap.className = 'admin-select';
-  selectEl.parentNode.insertBefore(wrap, selectEl);
-  wrap.appendChild(selectEl);
-
-  const trigger = document.createElement('button');
-  trigger.type = 'button';
-  trigger.className = 'admin-select-trigger';
-  trigger.setAttribute('aria-haspopup', 'listbox');
-  trigger.setAttribute('aria-expanded', 'false');
-  trigger.innerHTML = `
-    <span class="admin-select-value"></span>
-    <svg class="admin-select-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-      <path d="m6 9 6 6 6-6"/>
-    </svg>`;
-  wrap.appendChild(trigger);
-
-  const menu = document.createElement('div');
-  menu.className = 'admin-select-menu';
-  menu.setAttribute('role', 'listbox');
-  menu.hidden = true;
-  wrap.appendChild(menu);
-
-  const valueEl = trigger.querySelector('.admin-select-value');
-
-  function closeMenu() {
-    menu.hidden = true;
-    trigger.setAttribute('aria-expanded', 'false');
-  }
-
-  function syncFromSelect() {
-    const opt = selectEl.options[selectEl.selectedIndex];
-    valueEl.textContent = opt ? opt.textContent : '';
-    valueEl.classList.toggle('is-placeholder', !selectEl.value);
-    menu.querySelectorAll('.admin-select-item').forEach(item => {
-      item.classList.toggle('is-selected', item.dataset.value === selectEl.value);
-    });
-  }
-
-  function rebuildMenu() {
-    menu.innerHTML = '';
-    [...selectEl.options].forEach(opt => {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = 'admin-select-item';
-      item.dataset.value = opt.value;
-      item.setAttribute('role', 'option');
-      item.textContent = opt.textContent;
-      item.addEventListener('click', (e) => {
-        e.stopPropagation();
-        selectEl.value = opt.value;
-        selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-        closeMenu();
-        syncFromSelect();
-      });
-      menu.appendChild(item);
-    });
-    syncFromSelect();
-  }
-
-  trigger.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const willOpen = menu.hidden;
-    document.querySelectorAll('.admin-select-menu').forEach(m => { m.hidden = true; });
-    document.querySelectorAll('.admin-select-trigger').forEach(t => t.setAttribute('aria-expanded', 'false'));
-    if (willOpen) {
-      menu.hidden = false;
-      trigger.setAttribute('aria-expanded', 'true');
-    }
-  });
-
-  if (!window._adminSelectCloseListener) {
-    document.addEventListener('click', () => {
-      document.querySelectorAll('.admin-select-menu').forEach(m => { m.hidden = true; });
-      document.querySelectorAll('.admin-select-trigger').forEach(t => t.setAttribute('aria-expanded', 'false'));
-    });
-    window._adminSelectCloseListener = true;
-  }
-
-  selectEl.addEventListener('change', syncFromSelect);
-  selectEl._syncAdminSelect = syncFromSelect;
-  new MutationObserver(rebuildMenu).observe(selectEl, { childList: true });
-  rebuildMenu();
+function selectedServer() {
+  return state.pluginServers.find(s => s.root === state.pluginToggle.server) || null;
 }
 
-export function initAllAdminSelects(root = document) {
-  root.querySelectorAll('select').forEach(selectEl => {
-    if (selectEl.dataset.adminSelectWired !== 'true') {
-      initAdminSelect(selectEl);
-    }
-  });
+function isOn(folder) {
+  const pending = state.pluginToggle.pending;
+  return pending.has(folder.base_name) ? pending.get(folder.base_name) : !folder.is_disabled;
+}
+
+async function loadFolders(server) {
+  try {
+    server.folders = await invoke('list_plugin_folders', { serverRoot: server.root });
+    server.error = null;
+  } catch (e) {
+    server.folders = null;
+    server.error = String(e);
+  }
 }
 
 export async function loadPluginToggleServers() {
   try {
-    const servers = await invoke('get_plugin_server_roots');
-    const select = document.getElementById('pluginToggleServerSelect');
-    if (!select) return;
-
-    const previous = select.value;
-    select.innerHTML = '<option value="">Select a server</option>';
-
-    if (servers.length === 0) {
-      const option = document.createElement('option');
-      option.value = '';
-      option.textContent = 'No servers found — set ASA root in Settings';
-      option.disabled = true;
-      select.appendChild(option);
-    } else {
-      servers.forEach(server => {
-        const option = document.createElement('option');
-        option.value = server;
-        const parts = server.split(/[/\\]/);
-        option.textContent = parts[parts.length - 1] || server;
-        option.title = server;
-        select.appendChild(option);
-      });
-      if (previous && [...select.options].some(opt => opt.value === previous)) {
-        select.value = previous;
-      }
-    }
-
-    if (select.dataset.adminSelectWired !== 'true') {
-      initAdminSelect(select);
-    }
-
-    select.dispatchEvent(new Event('change', { bubbles: true }));
+    const roots = await invoke('get_plugin_server_roots');
+    const previous = new Map(state.pluginServers.map(s => [s.root, s]));
+    state.pluginServers = roots.map(root => previous.get(root) || { root, name: basename(root), folders: null, error: null });
+    state.pluginServers.forEach(s => { s.cluster = clusterForServer(s.root); });
+    await Promise.all(state.pluginServers.map(loadFolders));
   } catch (e) {
-    console.error('Failed to load servers:', e);
+    state.pluginServers = [];
+    $('pluginServerList').innerHTML = `<div class="empty compact is-error">${escapeHtml(String(e))}</div>`;
+    return;
+  }
+  if (!selectedServer()) {
+    state.pluginToggle.server = state.pluginServers[0]?.root ?? null;
+    state.pluginToggle.pending.clear();
+  }
+  renderServerList();
+  renderFolders();
+}
+
+function renderServerList() {
+  const list = $('pluginServerList');
+  if (state.pluginServers.length === 0) {
+    list.innerHTML = '<div class="empty compact">No ASA servers found. Set the ASA server directory in Settings.</div>';
+    return;
+  }
+  const needle = state.pluginToggle.search.trim().toLowerCase();
+  const servers = state.pluginServers.filter(s => !needle || `${s.name} ${s.cluster}`.toLowerCase().includes(needle));
+  if (servers.length === 0) {
+    list.innerHTML = '<div class="empty compact">No servers match.</div>';
+    return;
+  }
+  list.innerHTML = servers.map(s => {
+    const selected = s.root === state.pluginToggle.server;
+    const count = s.folders ? `${s.folders.filter(f => !f.is_disabled).length} / ${s.folders.length}` : '—';
+    return `<button class="server-row ${selected ? 'selected' : ''}" type="button" data-server="${escapeHtml(s.root)}" aria-pressed="${selected}" title="${escapeHtml(s.root)}">
+      <span class="text"><span class="name" style="display:block">${escapeHtml(s.name)}</span><span class="cluster" style="display:block">${escapeHtml(s.cluster || (s.error ? 'No plugins folder' : 'No backup job'))}</span></span>
+      <span class="count" title="enabled / installed">${count}</span>
+    </button>`;
+  }).join('');
+}
+
+function renderFolders() {
+  const server = selectedServer();
+  const list = $('pluginToggleFoldersList');
+  $('pluginFolderHead').hidden = !server;
+  if (!server) {
+    list.innerHTML = '<div class="empty compact">Select a server to see its plugin folders.</div>';
+    renderPendingBar();
+    return;
+  }
+  $('pluginFolderServerName').textContent = server.name;
+  const dir = pluginsDirFor(server.root);
+  $('pluginFolderPath').textContent = shortenPath(dir, 6);
+  $('pluginFolderPath').title = dir;
+
+  const folders = server.folders || [];
+  const onCount = folders.filter(isOn).length;
+  const counts = { all: folders.length, on: onCount, off: folders.length - onCount };
+  document.querySelectorAll('#pluginFolderFilter [data-count]').forEach(el => { el.textContent = counts[el.dataset.count]; });
+
+  if (server.error) {
+    list.innerHTML = `<div class="empty compact is-error">${escapeHtml(server.error)}</div>`;
+  } else if (folders.length === 0) {
+    list.innerHTML = '<div class="empty compact">No plugin folders on this server.</div>';
+  } else {
+    const filter = state.pluginToggle.filter;
+    const shown = folders.filter(f => filter === 'all' || (filter === 'on') === isOn(f));
+    list.innerHTML = shown.length === 0
+      ? `<div class="empty compact">No plugins are ${filter}.</div>`
+      : shown.map(f => {
+        const on = isOn(f);
+        const pending = state.pluginToggle.pending.has(f.base_name);
+        return `<div class="folder-row ${on ? '' : 'off'} ${pending ? 'is-pending' : ''}" data-folder="${escapeHtml(f.base_name)}">
+          <button class="switch" type="button" role="switch" aria-checked="${on}" aria-label="${escapeHtml(f.base_name)}"></button>
+          <span class="name">${escapeHtml(f.base_name)}</span>
+          <span class="dir" title="${escapeHtml(f.full_path)}">${escapeHtml(f.name)}</span>
+          <span class="pending">${pending ? (on ? 'turning on' : 'turning off') : ''}</span>
+        </div>`;
+      }).join('');
+  }
+  renderPendingBar();
+}
+
+function renderPendingBar() {
+  const server = selectedServer();
+  const pending = [...state.pluginToggle.pending.entries()];
+  const has = pending.length > 0;
+  $('pluginToggleBar').classList.toggle('is-idle', !has);
+  $('pluginPendingSummary').textContent = has ? plural(pending.length, 'pending change') : 'No pending changes';
+  $('pluginPendingDetail').textContent = has
+    ? pending.map(([name, on]) => `${name} ${on ? 'on' : 'off'}`).join(', ')
+    : 'Flip a switch, then apply. Restart the server to load the change.';
+  $('discardPluginChangesBtn').disabled = !has;
+  const allBtn = $('toggleAllServersBtn');
+  const curBtn = $('toggleCurrentServerBtn');
+  if (allBtn.dataset.label === undefined) {
+    allBtn.disabled = !has;
+    allBtn.textContent = `Apply to all ${state.pluginServers.length} servers`;
+  }
+  if (curBtn.dataset.label === undefined) {
+    curBtn.disabled = !has;
+    curBtn.textContent = server ? `Apply to ${server.name}` : 'Apply';
   }
 }
 
-export async function loadPluginFolders(serverRoot) {
-  try {
-    const folders = await invoke('list_plugin_folders', { serverRoot });
-    const container = document.getElementById('pluginToggleFoldersList');
-    container.innerHTML = '';
-    
-    if (folders.length === 0) {
-      container.innerHTML = '<div class="empty-state">No plugin folders found</div>';
-      return;
-    }
-    
-    folders.forEach(folder => {
-      const item = document.createElement('div');
-      item.className = `plugin-folder-item ${folder.is_disabled ? 'disabled' : ''}`;
-      
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.value = folder.full_path;
-      checkbox.dataset.baseName = folder.base_name;
-      checkbox.addEventListener('change', updateToggleButtons);
-      
-      const label = document.createElement('label');
-      label.className = 'folder-name';
-      label.textContent = folder.name;
-      label.style.cursor = 'pointer';
-      label.style.margin = 0;
-      label.style.flex = 1;
-      
-      label.addEventListener('click', (e) => {
-        e.preventDefault();
-        checkbox.checked = !checkbox.checked;
-        checkbox.dispatchEvent(new Event('change'));
-      });
-      
-      item.appendChild(checkbox);
-      item.appendChild(label);
-      container.appendChild(item);
+async function selectServer(root) {
+  if (root === state.pluginToggle.server) return;
+  if (state.pluginToggle.pending.size > 0) {
+    const discard = await confirmDialog({
+      title: 'Discard pending changes?',
+      body: `<p>${plural(state.pluginToggle.pending.size, 'change')} on ${escapeHtml(selectedServer()?.name || 'this server')} have not been applied.</p>`,
+      confirmLabel: 'Discard',
+      danger: true,
     });
-    
-    state.selectedPluginFolders.clear();
-    updateToggleButtons();
-  } catch (e) {
-    console.error('Failed to load plugin folders:', e);
-    const container = document.getElementById('pluginToggleFoldersList');
-    container.innerHTML = `<div class="empty-state" style="color: var(--error-color);">Error: ${escapeHtml(String(e))}</div>`;
+    if (!discard) return;
   }
+  state.pluginToggle.server = root;
+  state.pluginToggle.pending.clear();
+  renderServerList();
+  renderFolders();
 }
 
-export function updateToggleButtons() {
-  const checkboxes = document.querySelectorAll('#pluginToggleFoldersList input[type="checkbox"]:checked');
-  const hasSelection = checkboxes.length > 0;
-  
-  document.getElementById('toggleCurrentServerBtn').disabled = !hasSelection;
-  document.getElementById('toggleAllServersBtn').disabled = !hasSelection;
+function toggleFolder(baseName) {
+  const server = selectedServer();
+  const folder = server?.folders?.find(f => f.base_name === baseName);
+  if (!folder) return;
+  const target = !isOn(folder);
+  if (target === !folder.is_disabled) state.pluginToggle.pending.delete(baseName);
+  else state.pluginToggle.pending.set(baseName, target);
+  renderFolders();
+  $('pluginToggleFoldersList').querySelector(`[data-folder="${CSS.escape(baseName)}"] .switch`)?.focus({ preventScroll: true });
+}
+
+export function discardPluginChanges() {
+  state.pluginToggle.pending.clear();
+  renderFolders();
+}
+
+function reportErrors(errors, successMessage) {
+  if (errors.length) {
+    toast(`${plural(errors.length, 'folder')} could not be renamed`, { kind: 'error', detail: errors.join('\n') });
+  } else {
+    toast(successMessage, { kind: 'success', detail: 'Restart the server to load the change.' });
+  }
 }
 
 export async function togglePluginsForCurrentServer() {
-  const checkboxes = document.querySelectorAll('#pluginToggleFoldersList input[type="checkbox"]:checked');
-
-  if (checkboxes.length === 0) {
-    alert('Please select at least one folder to toggle');
-    return;
-  }
-
+  const server = selectedServer();
+  const pending = [...state.pluginToggle.pending.entries()];
+  if (!server || pending.length === 0) return;
+  const btn = $('toggleCurrentServerBtn');
+  setButtonBusy(btn, true, 'Applying…');
+  const errors = [];
   try {
-    const confirmed = await confirm(`Toggle ${checkboxes.length} folder(s) for the current server?`, {
-      title: 'Toggle Plugins',
-      kind: 'info'
-    });
-
-    if (!confirmed) {
-      return;
-    }
-
-    const serverRoot = document.getElementById('pluginToggleServerSelect').value;
-    const errors = [];
-
-    for (const checkbox of checkboxes) {
+    for (const [baseName, targetOn] of pending) {
+      const folder = server.folders?.find(f => f.base_name === baseName);
+      if (!folder || targetOn === !folder.is_disabled) continue;
       try {
-        await invoke('toggle_plugin_folder', { folderPath: checkbox.value });
+        await invoke('toggle_plugin_folder', { folderPath: folder.full_path });
       } catch (e) {
-        console.error('Error toggling folder:', checkbox.value, e);
-        errors.push(`${checkbox.dataset.baseName}: ${e}`);
+        errors.push(`${baseName}: ${e}`);
       }
     }
-
-    if (errors.length > 0) {
-      alert('Some folders failed to toggle:\n' + errors.join('\n'));
-    }
-
-    await loadPluginFolders(serverRoot);
-  } catch (e) {
-    console.error('Error in togglePluginsForCurrentServer:', e);
-    alert('Failed to toggle plugins: ' + e);
+  } finally {
+    setButtonBusy(btn, false);
   }
+  state.pluginToggle.pending.clear();
+  await loadFolders(server);
+  renderServerList();
+  renderFolders();
+  reportErrors(errors, `Applied ${plural(pending.length, 'change')} to ${server.name}`);
 }
 
 export async function togglePluginsForAllServers() {
-  const checkboxes = document.querySelectorAll('#pluginToggleFoldersList input[type="checkbox"]:checked');
-
-  if (checkboxes.length === 0) {
-    alert('Please select at least one folder to toggle');
-    return;
-  }
-
-  const serverRoot = document.getElementById('pluginToggleServerSelect').value;
-  if (!serverRoot) {
-    alert('Please select a server first');
-    return;
-  }
-
-  const folders = await invoke('list_plugin_folders', { serverRoot });
-  const folderStates = new Map();
-  folders.forEach(folder => {
-    folderStates.set(folder.base_name, folder.is_disabled);
+  const pending = [...state.pluginToggle.pending.entries()];
+  if (pending.length === 0) return;
+  const confirmed = await confirmDialog({
+    title: `Apply to all ${state.pluginServers.length} servers?`,
+    body: `<p>Every server that has these plugins is set to match:</p>${listHtml(pending.map(([n, on]) => `${n} → ${on ? 'on' : 'off'}`))}`,
+    confirmLabel: 'Apply to all',
   });
+  if (!confirmed) return;
 
-  const foldersToToggle = [];
-  for (const checkbox of checkboxes) {
-    const baseName = checkbox.dataset.baseName;
-    const currentStateDisabled = folderStates.get(baseName) || false;
-    const targetStateDisabled = !currentStateDisabled;
-
-    foldersToToggle.push({
-      baseName,
-      targetStateDisabled,
-      currentState: currentStateDisabled ? 'disabled' : 'enabled',
-      targetState: targetStateDisabled ? 'disabled' : 'enabled'
-    });
-  }
-
-  const uniqueFolders = [];
-  const seen = new Set();
-  for (const folder of foldersToToggle) {
-    if (!seen.has(folder.baseName)) {
-      seen.add(folder.baseName);
-      uniqueFolders.push(folder);
-    }
-  }
-
-  const folderList = uniqueFolders.map(f =>
-    `${f.baseName} (${f.currentState} → ${f.targetState})`
-  ).join('\n');
-
+  const btn = $('toggleAllServersBtn');
+  setButtonBusy(btn, true, 'Applying…');
+  const errors = [];
+  let renamed = 0;
   try {
-    const confirmed = await confirm(
-      `Set ${uniqueFolders.length} folder(s) across all servers to match current server state?\n\n` +
-      `Folders:\n${folderList}`,
-      {
-        title: 'Toggle Plugins for All Servers',
-        kind: 'info'
-      }
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    const errors = [];
-    const toggledPaths = [];
-
-    for (const folder of uniqueFolders) {
+    for (const [baseName, targetOn] of pending) {
       try {
-        const paths = await invoke('toggle_plugin_for_all_servers', {
-          baseFolderName: folder.baseName,
-          targetStateDisabled: folder.targetStateDisabled
-        });
-        toggledPaths.push(...paths);
+        const paths = await invoke('toggle_plugin_for_all_servers', { baseFolderName: baseName, targetStateDisabled: !targetOn });
+        renamed += paths.length;
       } catch (e) {
-        console.error('Error toggling folder:', folder.baseName, e);
-        errors.push(`${folder.baseName}: ${e}`);
+        errors.push(`${baseName}: ${e}`);
       }
     }
-
-    if (errors.length > 0) {
-      alert('Some folders failed to toggle:\n' + errors.join('\n'));
-    } else {
-      alert(`Successfully set ${toggledPaths.length} folder(s) across all servers`);
-    }
-
-    if (serverRoot) {
-      await loadPluginFolders(serverRoot);
-    }
-  } catch (e) {
-    console.error('Error in togglePluginsForAllServers:', e);
-    alert('Failed to toggle plugins: ' + e);
+  } finally {
+    setButtonBusy(btn, false);
   }
+  state.pluginToggle.pending.clear();
+  await Promise.all(state.pluginServers.map(loadFolders));
+  renderServerList();
+  renderFolders();
+  reportErrors(errors, `Renamed ${plural(renamed, 'folder')} across all servers`);
+}
+
+export function setupPluginToggle() {
+  $('pluginServerSearch').addEventListener('input', (e) => {
+    state.pluginToggle.search = e.target.value;
+    renderServerList();
+  });
+  $('pluginServerList').addEventListener('click', (e) => {
+    const row = e.target.closest('[data-server]');
+    if (row) selectServer(row.dataset.server);
+  });
+  $('pluginToggleFoldersList').addEventListener('click', (e) => {
+    const row = e.target.closest('[data-folder]');
+    if (row) toggleFolder(row.dataset.folder);
+  });
+  onSegmentedChange($('pluginFolderFilter'), (value) => {
+    state.pluginToggle.filter = value;
+    renderFolders();
+  });
+  setSegmented($('pluginFolderFilter'), state.pluginToggle.filter);
+  $('discardPluginChangesBtn').addEventListener('click', discardPluginChanges);
 }

@@ -1,70 +1,50 @@
 import {
-  pickRootDir, pickDestinationDir, cancelJobForm, addJob,
-  showMonthlyStatus, runMonthlyBackup
+  closeEditDrawer, saveJobChanges, deleteJobFromDrawer, pickDrawerRootDir, pickDrawerDestinationDir,
 } from './jobs/form.js';
+import { showMonthlyStatus, closeMonthlyStatus, runMonthlyBackup, runMonthlyFromStatus } from './jobs/monthly.js';
 import { refreshJobs } from './jobs/table.js';
-import { refreshLogs, clearLogsView, openLogsFolder } from './logs.js';
+import { clearLogsView, openLogsFolder } from './logs.js';
 import {
   showAddJobForm, closeAddJobModal, wizardNextStep, wizardPreviousStep,
-  pickWizardRootDir, pickWizardDestinationDir, wizardFinish
+  pickWizardRootDir, pickWizardDestinationDir,
 } from './wizard/backup-wizard.js';
-import {
-  browsePluginSource, refreshPluginDestinations, toggleAllSourcePlugins, toggleAllDestinations,
-  installSelectedPlugins, proceedWithPluginInstallation,
-  closePluginConfirmModal, closePluginResultsModal
-} from './plugins/install.js';
+import { browsePluginSource, installSelectedPlugins, closePluginResultsModal } from './plugins/install.js';
 import { togglePluginsForCurrentServer, togglePluginsForAllServers } from './plugins/toggle.js';
-import { searchDataLookup, toggleDataLookupSelectAll, deleteSelectedDataLookupFiles } from './data-lookup.js';
+import { searchDataLookup, deleteSelectedDataLookupFiles } from './data-lookup.js';
 
 const actions = {
   refreshJobs,
   runMonthlyBackup,
+  runMonthlyFromStatus,
   showAddJobForm,
   showMonthlyStatus,
-  pickRootDir,
-  pickDestinationDir,
-  addJob,
-  cancelJobForm,
-  refreshLogs,
+  closeMonthlyStatus,
+  closeEditDrawer: () => closeEditDrawer(),
+  saveJobChanges,
+  deleteJobFromDrawer,
+  pickDrawerRootDir,
+  pickDrawerDestinationDir,
   clearLogsView,
   openLogsFolder,
-  toggleAllSourcePlugins,
   browsePluginSource,
-  toggleAllDestinations,
-  refreshPluginDestinations,
   installSelectedPlugins,
+  closePluginResultsModal,
   togglePluginsForCurrentServer,
   togglePluginsForAllServers,
   searchDataLookup,
-  toggleDataLookupSelectAll,
   deleteSelectedDataLookupFiles,
   closeAddJobModal,
   pickWizardRootDir,
   pickWizardDestinationDir,
   wizardPreviousStep,
   wizardNextStep,
-  wizardFinish,
-  closePluginConfirmModal,
-  proceedWithPluginInstallation,
-  closePluginResultsModal,
 };
 
 export function bindUiActions() {
   document.addEventListener('click', (event) => {
     const target = event.target.closest('[data-action]');
-    if (!target) return;
+    if (!target || target.disabled) return;
     const action = actions[target.dataset.action];
-    if (typeof action === 'function') {
-      action();
-    }
-  });
-
-  document.addEventListener('change', (event) => {
-    const target = event.target.closest('[data-change]');
-    if (!target) return;
-    const action = actions[target.dataset.change];
-    if (typeof action === 'function') {
-      action();
-    }
+    if (typeof action === 'function') action();
   });
 }

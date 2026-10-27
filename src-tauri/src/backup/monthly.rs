@@ -9,6 +9,17 @@ use super::shared::{copy_large_file, rename_temp_to_backup, same_volume, TempFil
 
 const DEFAULT_MONTHLY_BASE_DIR: &str = r"C:\arkade\Arkade Shared Global\FOTM Backups";
 
+/// Monthly archive base folder: the configured one, or the built-in default.
+pub fn monthly_destination(config: &crate::config::Config) -> String {
+    config
+        .monthly_archive_destination
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_MONTHLY_BASE_DIR)
+        .to_string()
+}
+
 const MONTHLY_CATEGORY_FOLDERS: &[&str] = &[
     "ASA Legacy",
     "ASE Legacy",
@@ -54,10 +65,16 @@ fn ensure_monthly_dir_structure(base_dir: &str, dt: DateTime<Utc>) -> Result<Pat
 /// names count, so a job named `Island` does not count `Island_PVP_...` copies, and unfinished
 /// `.partial` copies are ignored.
 fn count_existing_monthly_copies(category_dir: &Path, job_name: &str) -> Result<usize> {
+    Ok(existing_monthly_copy_times(category_dir, job_name)?.len())
+}
+
+/// Backup timestamps (from the file names) of this job's archives in a monthly category folder,
+/// oldest first. Same matching rules as `count_existing_monthly_copies`.
+fn existing_monthly_copy_times(category_dir: &Path, job_name: &str) -> Result<Vec<DateTime<Utc>>> {
     if !category_dir.exists() {
-        return Ok(0);
+        return Ok(Vec::new());
     }
-    let mut count = 0usize;
+    let mut times = Vec::new();
     for entry in fs::read_dir(category_dir)? {
         let entry = entry?;
         let p = entry.path();
@@ -68,11 +85,12 @@ fn count_existing_monthly_copies(category_dir: &Path, job_name: &str) -> Result<
             Some(s) => s,
             None => continue,
         };
-        if parse_backup_timestamp_from_filename(job_name, file_name).is_some() {
-            count += 1;
+        if let Some(ts) = parse_backup_timestamp_from_filename(job_name, file_name) {
+            times.push(ts);
         }
     }
-    Ok(count)
+    times.sort();
+    Ok(times)
 }
 
 /// Put a complete copy of `source` at `dest`.
@@ -196,6 +214,9 @@ pub struct MonthlyJobStatus {
     pub monthly_cluster: String,
     pub copied_this_month: u32,
     pub completed: bool,
+    /// RFC 3339 backup times of the copies found this month, oldest first.
+    #[serde(default)]
+    pub copy_times: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -225,11 +246,11 @@ pub fn get_monthly_status(app_data: &AppData) -> Result<MonthlyStatusResult> {
             Some(month_folder.join(cluster))
         };
 
-        let copied = if let Some(dir) = cluster_dir.as_ref() {
-            count_existing_monthly_copies(dir, &job.name).unwrap_or(0) as u32
-        } else {
-            0
-        };
+        let copy_times = cluster_dir
+            .as_ref()
+            .and_then(|dir| existing_monthly_copy_times(dir, &job.name).ok())
+            .unwrap_or_default();
+        let copied = copy_times.len() as u32;
 
         statuses.push(MonthlyJobStatus {
             job_id: job.id.clone(),
@@ -237,6 +258,7 @@ pub fn get_monthly_status(app_data: &AppData) -> Result<MonthlyStatusResult> {
             monthly_cluster: job.monthly_cluster.clone(),
             copied_this_month: copied,
             completed: copied >= 2,
+            copy_times: copy_times.iter().map(|t| t.to_rfc3339()).collect(),
         });
     }
 
@@ -420,7 +442,7 @@ pub fn execute_monthly_archive(plan: MonthlyArchivePlan) -> Result<MonthlyArchiv
 
 #[cfg(test)]
 mod tests {
-    use super::{copy_complete_file, count_existing_monthly_copies};
+    use super::{copy_complete_file, count_existing_monthly_copies, existing_monthly_copy_times};
     use chrono::Utc;
     use std::fs;
 
@@ -440,6 +462,12 @@ mod tests {
 
         assert_eq!(count_existing_monthly_copies(dir, "Island").unwrap(), 1);
         assert_eq!(count_existing_monthly_copies(dir, "Island_PVP").unwrap(), 2);
+
+        let times = existing_monthly_copy_times(dir, "Island_PVP").unwrap();
+        assert_eq!(
+            times.iter().map(|t| t.to_rfc3339()).collect::<Vec<_>>(),
+            vec!["2026-10-01T12:00:00+00:00", "2026-10-02T12:00:00+00:00"]
+        );
     }
 
     #[test]

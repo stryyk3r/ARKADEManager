@@ -1,7 +1,8 @@
 @import "./base.css";
 @import "./layout.css";
 @import "./components.css";
-@import "./tables.css";
 @import "./forms.css";
+@import "./tables.css";
 @import "./modals.css";
 @import "./plugins.css";
+@import "./pages.css";

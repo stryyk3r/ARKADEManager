@@ -67,15 +67,17 @@ fn main() {
         std::process::exit(1);
     });
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-    let log_file = app_data
-        .get_logs_dir()
-        .join(format!("arkade_manager_{}.log", timestamp));
+    let log_file_name = format!("arkade_manager_{}.log", timestamp);
+    let log_file = app_data.get_logs_dir().join(&log_file_name);
+    let _ = app_data::CURRENT_LOG_FILE.set(log_file_name);
 
     let log_config = simplelog::ConfigBuilder::new()
-        .set_time_level(log::LevelFilter::Info)
+        // Error is the least verbose level, so time and module path are written on every line
+        // (the Logs tab parses both).
+        .set_time_level(log::LevelFilter::Error)
         .set_time_format_rfc3339()
         .set_thread_level(log::LevelFilter::Off)
-        .set_target_level(log::LevelFilter::Off)
+        .set_target_level(log::LevelFilter::Error)
         .set_location_level(log::LevelFilter::Off)
         .build();
 
@@ -141,6 +143,10 @@ fn main() {
             commands::save_ark_maps,
             commands::reset_ark_maps,
             commands::save_server_roots,
+            commands::save_monthly_destination,
+            commands::get_app_paths,
+            commands::inspect_directory,
+            commands::check_destination,
             commands::list_jobs,
             commands::add_job,
             commands::update_job,
@@ -152,6 +158,7 @@ fn main() {
             commands::get_monthly_status,
             commands::get_status,
             commands::read_logs,
+            commands::list_log_files,
             commands::open_logs_folder,
             commands::lookup_data_files,
             commands::delete_data_files,

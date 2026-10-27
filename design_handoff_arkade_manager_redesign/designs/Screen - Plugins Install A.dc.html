@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#020F22;}*{box-sizing:border-box;}a{color:#1FE3F5;}a:hover{color:#8FF3FB;}</style>
+</helmet>
+<div style="width:1280px;height:800px;display:flex;background:#020F22;font-family:Manrope,sans-serif;color:#F2F0F8;overflow:hidden;">
+  <dc-import name="ArkSidebar" active="plugins" hint-size="232px,800px"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:26px 32px 26px;">
+    <h1 style="margin:0;font-size:21px;font-weight:800;letter-spacing:-.01em;">Plugins</h1>
+    <p style="margin:4px 0 0;font-size:13px;color:#A9A6C4;">ArkApi plugins for servers under <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#D9D7EA;">C:\arkservers\asaservers</span></p>
+    <div style="display:flex;gap:24px;margin-top:18px;border-bottom:1px solid rgba(255,255,255,.08);font-size:13.5px;font-weight:700;">
+      <span style="padding:0 0 10px;border-bottom:2px solid #1FE3F5;color:#F2F0F8;">Install</span>
+      <span style="padding:0 0 10px;color:#A9A6C4;">Enable / disable</span>
+    </div>
+
+    <div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 300px;gap:16px;margin-top:18px;">
+      <div style="display:flex;flex-direction:column;min-height:0;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:#051326;">
+        <div style="padding:14px 14px 12px;border-bottom:1px solid rgba(255,255,255,.07);">
+          <div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13.5px;font-weight:700;"><span style="color:#8A85AB;margin-right:6px;">1</span>Source plugins</span><span style="font-size:12.5px;color:#A9A6C4;">3 of 7 selected</span></div>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <div style="flex:1;min-width:0;height:30px;display:flex;align-items:center;padding:0 9px;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:#030C1C;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#D9D7EA;white-space:nowrap;overflow:hidden;">D:\ArkApi\Plugins-Release</div>
+            <button style="height:30px;padding:0 11px;border-radius:5px;border:1px solid rgba(255,255,255,.12);background:#061730;color:#D9D7EA;font:600 12.5px Manrope;">Browse</button>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;height:34px;padding:0 14px;border-bottom:1px solid rgba(255,255,255,.05);font-size:12px;font-weight:600;color:#8A85AB;">
+          <span style="width:15px;height:15px;border-radius:3px;border:1.5px solid #6F6B92;display:flex;align-items:center;justify-content:center;"><span style="width:7px;height:2px;background:#A9A6C4;"></span></span>Select all
+        </div>
+        <sc-for list="{{ src }}" as="p" hint-placeholder-count="7">
+          <div style="display:flex;align-items:center;gap:10px;height:40px;padding:0 14px;border-bottom:1px solid rgba(255,255,255,.05);background:{{ p.bg }};">
+            <span style="width:15px;height:15px;border-radius:3px;flex:none;display:flex;align-items:center;justify-content:center;border:1.5px solid {{ p.cb }};background:{{ p.cbg }};"><sc-if value="{{ p.on }}" hint-placeholder-val="{{ false }}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#020F22" stroke-width="4"><path d="M5 12l5 5L20 7"></path></svg></sc-if></span>
+            <span style="flex:1;font-size:13px;font-weight:600;">{{ p.n }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#A9A6C4;">{{ p.v }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display:flex;flex-direction:column;min-height:0;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:#051326;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;border-bottom:1px solid rgba(255,255,255,.07);">
+          <span style="font-size:13.5px;font-weight:700;"><span style="color:#8A85AB;margin-right:6px;">2</span>Destination servers</span><span style="font-size:12.5px;color:#A9A6C4;">4 of 6 selected</span>
+        </div>
+        <sc-for list="{{ dest }}" as="g" hint-placeholder-count="2">
+          <div style="display:flex;align-items:center;justify-content:space-between;height:32px;padding:0 14px;background:#041021;border-bottom:1px solid rgba(255,255,255,.05);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8A85AB;"><span>{{ g.n }}</span><span style="text-transform:none;letter-spacing:0;font-weight:600;color:#1FE3F5;">{{ g.action }}</span></div>
+          <sc-for list="{{ g.s }}" as="s" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;border-bottom:1px solid rgba(255,255,255,.05);background:{{ s.bg }};">
+              <span style="width:15px;height:15px;border-radius:3px;flex:none;display:flex;align-items:center;justify-content:center;border:1.5px solid {{ s.cb }};background:{{ s.cbg }};"><sc-if value="{{ s.on }}" hint-placeholder-val="{{ false }}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#020F22" stroke-width="4"><path d="M5 12l5 5L20 7"></path></svg></sc-if></span>
+              <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;">{{ s.n }}</div><div style="font-size:11.5px;color:#8A85AB;margin-top:1px;">{{ s.meta }}</div></div>
+              <span style="font-size:11.5px;font-weight:600;color:{{ s.stc }};">{{ s.st }}</span>
+            </div>
+          </sc-for>
+        </sc-for>
+      </div>
+
+      <div style="display:flex;flex-direction:column;min-height:0;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:#051326;">
+        <div style="padding:14px;border-bottom:1px solid rgba(255,255,255,.07);font-size:13.5px;font-weight:700;"><span style="color:#8A85AB;margin-right:6px;">3</span>Review</div>
+        <div style="padding:16px 14px 14px;">
+          <div style="font-size:22px;font-weight:800;letter-spacing:-.01em;">12 installs</div>
+          <div style="font-size:12.5px;color:#A9A6C4;margin-top:2px;">3 plugins on 4 servers</div>
+          <div style="display:flex;gap:14px;margin-top:12px;font-size:12.5px;font-weight:600;">
+            <span style="color:#F2F0F8;"><span style="color:#34d399;">●</span> 7 new</span>
+            <span style="color:#F2F0F8;"><span style="color:#fbbf24;">●</span> 4 updates</span>
+            <span style="color:#F2F0F8;"><span style="color:#6F6B92;">●</span> 1 same</span>
+          </div>
+        </div>
+        <div style="flex:1;min-height:0;border-top:1px solid rgba(255,255,255,.06);padding:6px 0;">
+          <sc-for list="{{ review }}" as="r" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 14px;font-size:12.5px;">
+              <span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:600;">{{ r.p }}</span> <span style="color:#8A85AB;">→ {{ r.s }}</span></span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap;color:{{ r.c }};">{{ r.v }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding:14px;border-top:1px solid rgba(255,255,255,.07);">
+          <div style="display:flex;align-items:flex-start;gap:9px;font-size:12.5px;color:#D9D7EA;margin-bottom:12px;">
+            <span style="width:15px;height:15px;border-radius:3px;flex:none;margin-top:1px;display:flex;align-items:center;justify-content:center;background:#1FE3F5;border:1.5px solid #1FE3F5;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#020F22" stroke-width="4"><path d="M5 12l5 5L20 7"></path></svg></span>
+            Keep each server's existing config.json
+          </div>
+          <button style="width:100%;height:36px;border-radius:6px;border:none;background:#DD3DEE;color:#16031C;font:800 13px Manrope;">Install 12</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:800}}">
+class Component extends DCLogic {
+  renderVals() {
+    const ck = on => ({ on, cb: on ? '#1FE3F5' : '#6F6B92', cbg: on ? '#1FE3F5' : 'transparent', bg: on ? 'rgba(31,227,245,.04)' : 'transparent' });
+    const src = [['ArkShop', '2.1.0', 1], ['Permissions', '1.6.2', 0], ['DiscordBridge', '1.3.0', 1], ['KillFeed', '1.4.1', 1], ['TribeLimiter', '1.2.0', 0], ['VoteRewards', '1.1.3', 0], ['AutoDinoWipe', '1.0.4', 0]]
+      .map(([n, v, on]) => ({ n, v, ...ck(!!on) }));
+    const S = (n, on, meta, st, stc) => ({ n, meta, st, stc, ...ck(on) });
+    const dest = [
+      { n: 'ASA Legacy', action: 'Select all', s: [S('lna-theisland', true, '9 plugins installed', '2 updates', '#fbbf24'), S('lna-center', true, '9 plugins installed', '1 update', '#fbbf24'), S('lna-lostcolony-2', true, '7 plugins installed', '3 new', '#34d399')] },
+      { n: 'ASA Omega', action: 'Select all', s: [S('omega-astraeos', true, '4 plugins installed', '2 new · 1 update', '#34d399'), S('omega-extinction', false, '4 plugins installed', '', '#8A85AB'), S('omega-scorched', false, 'Server offline', '', '#8A85AB')] },
+    ];
+    const R = (p, s, v, k) => ({ p, s, v, c: k === 'u' ? '#fbbf24' : k === 'n' ? '#34d399' : '#8A85AB' });
+    return { src, dest, review: [
+      R('ArkShop', 'lna-theisland', '2.0.4 → 2.1.0', 'u'), R('ArkShop', 'lna-center', '2.0.4 → 2.1.0', 'u'), R('ArkShop', 'lna-lostcolony-2', 'new', 'n'), R('ArkShop', 'omega-astraeos', '2.0.4 → 2.1.0', 'u'),
+      R('DiscordBridge', 'lna-theisland', '1.2.9 → 1.3.0', 'u'), R('DiscordBridge', 'lna-center', 'same', 's'), R('DiscordBridge', 'lna-lostcolony-2', 'new', 'n'), R('DiscordBridge', 'omega-astraeos', 'new', 'n'),
+      R('KillFeed', 'lna-theisland', 'new', 'n'), R('KillFeed', 'lna-center', 'new', 'n'),
+    ]};
+  }
+}
+</script>
+</body>
+</html>

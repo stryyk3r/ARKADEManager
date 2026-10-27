@@ -1,133 +1,90 @@
 import { invoke } from '@tauri-apps/api/core';
-import { confirm } from '@tauri-apps/plugin-dialog';
+import { escapeHtml, setButtonBusy } from '../utils/dom.js';
 import { formatReleaseDate } from '../utils/format.js';
+import { confirmDialog, toastError, toast } from './feedback.js';
 
-export function updateVersionDisplay({ version, isLatest, publishedAt, updateAvailable, updateVersion }) {
-  const versionBox = document.getElementById('versionBox');
-  const statusBadge = document.getElementById('versionStatusBadge');
-  const versionDate = document.getElementById('versionDate');
-  const updateBox = document.getElementById('updateBox');
+const $ = (id) => document.getElementById(id);
 
-  const displayVersion = version
-    ? (version.startsWith('v') ? version : `v${version}`)
-    : '';
+let latest = { available: false, version: '' };
 
-  if (versionBox && displayVersion) versionBox.textContent = displayVersion;
+function withV(version) {
+  return version ? (version.startsWith('v') ? version : `v${version}`) : '';
+}
 
-  const sidebarVersion = document.getElementById('sidebarVersion');
-  if (sidebarVersion && displayVersion) sidebarVersion.textContent = displayVersion;
-
-  const settingsVersion = document.getElementById('settingsVersion');
-  if (settingsVersion && displayVersion) settingsVersion.textContent = displayVersion;
-
-  const settingsVersionBadge = document.getElementById('settingsVersionBadge');
-  const settingsVersionDate = document.getElementById('settingsVersionDate');
-  const settingsVersionHint = document.getElementById('settingsVersionHint');
-  const settingsUpdateBtn = document.getElementById('settingsUpdateBtn');
-
-  if (statusBadge) {
-    if (updateAvailable) {
-      statusBadge.textContent = 'Update';
-      statusBadge.className = 'version-badge version-badge-update';
-      statusBadge.style.display = '';
-    } else {
-      statusBadge.style.display = 'none';
-    }
+export function updateVersionDisplay({ version, publishedAt, updateAvailable, updateVersion, checked, error }) {
+  const display = withV(version);
+  if (display) {
+    $('sidebarVersion').textContent = display;
+    $('settingsVersion').textContent = display;
   }
-
-  if (settingsVersionBadge) {
-    if (updateAvailable) {
-      settingsVersionBadge.textContent = 'Update';
-      settingsVersionBadge.className = 'version-badge version-badge-update';
-      settingsVersionBadge.style.display = '';
-    } else {
-      settingsVersionBadge.style.display = 'none';
-    }
+  const hint = $('settingsVersionHint');
+  if (error) {
+    hint.innerHTML = '<span class="text-yellow">Could not check for updates</span>';
+  } else if (!checked) {
+    hint.textContent = 'Checking for updates…';
+  } else if (updateAvailable) {
+    hint.innerHTML = `<span class="avail">${escapeHtml(withV(updateVersion))} is available</span>${publishedAt ? ` · released ${escapeHtml(formatReleaseDate(publishedAt))}` : ''}`;
+  } else {
+    hint.innerHTML = `${publishedAt ? `released ${escapeHtml(formatReleaseDate(publishedAt))} · ` : ''}<span class="ok">Up to date</span>`;
   }
-
-  const dateLabel = publishedAt ? `on ${formatReleaseDate(publishedAt)}` : '';
-  if (versionDate) versionDate.textContent = dateLabel;
-  if (settingsVersionDate) settingsVersionDate.textContent = dateLabel;
-
-  if (settingsVersionHint) {
-    settingsVersionHint.textContent = updateAvailable
-      ? `v${updateVersion || ''} is available`
-      : isLatest
-        ? 'You are on the latest release'
-        : '';
-  }
-
-  if (updateBox) {
-    if (updateAvailable) {
-      updateBox.textContent = updateVersion ? `Install v${updateVersion}` : 'Install Update';
-      updateBox.classList.add('show');
-    } else {
-      updateBox.classList.remove('show');
-    }
-  }
-
-  if (settingsUpdateBtn) {
-    if (updateAvailable) {
-      settingsUpdateBtn.textContent = updateVersion ? `Install v${updateVersion}` : 'Install Update';
-      settingsUpdateBtn.style.display = '';
-    } else {
-      settingsUpdateBtn.style.display = 'none';
-    }
-  }
+  const btn = $('settingsUpdateBtn');
+  btn.hidden = !updateAvailable;
+  if (updateAvailable && btn.dataset.label === undefined) btn.textContent = `Install ${withV(updateVersion)}`;
 }
 
 export async function loadVersion() {
   try {
-    const version = await invoke('get_app_version');
-    updateVersionDisplay({ version, isLatest: true });
+    updateVersionDisplay({ version: await invoke('get_app_version'), checked: false });
   } catch (e) {
     console.error('Failed to load version:', e);
   }
 }
 
-export async function checkForUpdates() {
+export async function checkForUpdates({ manual = false } = {}) {
+  const version = await invoke('get_app_version').catch(() => '');
   try {
-    const currentVersion = await invoke('get_app_version');
     const result = await invoke('check_for_updates');
-
+    latest = { available: !!result?.available, version: result?.version || '' };
     updateVersionDisplay({
-      version: currentVersion,
-      isLatest: !result?.available,
+      version,
+      checked: true,
       publishedAt: result?.published_at || '',
-      updateAvailable: !!result?.available,
-      updateVersion: result?.version || '',
+      updateAvailable: latest.available,
+      updateVersion: latest.version,
     });
+    if (manual && !latest.available) toast('You are on the latest version', { kind: 'success' });
   } catch (e) {
     console.error('Failed to check for updates:', e);
-    const updateBox = document.getElementById('updateBox');
-    if (updateBox) updateBox.classList.remove('show');
+    updateVersionDisplay({ version, checked: true, error: true });
+    if (manual) toastError('Could not check for updates', e);
   }
 }
 
 export async function handleUpdateClick() {
-  const updateBox = document.getElementById('updateBox');
-  if (!updateBox || !updateBox.classList.contains('show')) {
-    return;
-  }
-  
-  const confirmed = await confirm('Install update now? The application will restart after installation.', {
-    title: 'Update Available',
-    kind: 'info'
+  if (!latest.available) return;
+  const confirmed = await confirmDialog({
+    title: `Install ${withV(latest.version)}?`,
+    body: '<p>The update downloads, then ARKADE Manager closes and restarts. Running backups must finish first.</p>',
+    confirmLabel: 'Install and restart',
   });
-  
-  if (!confirmed) {
-    return;
-  }
-  
+  if (!confirmed) return;
+  const btn = $('settingsUpdateBtn');
+  setButtonBusy(btn, true, 'Installing…');
   try {
-    updateBox.textContent = 'Installing update...';
-    updateBox.style.pointerEvents = 'none';
-    
     await invoke('install_update');
-    // App will restart automatically after installation
   } catch (e) {
-    alert('Failed to install update: ' + e);
-    updateBox.textContent = 'Update Available - Click to Install';
-    updateBox.style.pointerEvents = 'auto';
+    toastError('Could not install the update', e);
+    setButtonBusy(btn, false);
   }
+}
+
+export function setupUpdates(openReleaseNotes) {
+  $('settingsUpdateBtn').addEventListener('click', handleUpdateClick);
+  $('settingsReleaseNotesBtn').addEventListener('click', openReleaseNotes);
+  $('settingsCheckUpdatesBtn').addEventListener('click', async () => {
+    const btn = $('settingsCheckUpdatesBtn');
+    setButtonBusy(btn, true, 'Checking…');
+    await checkForUpdates({ manual: true });
+    setButtonBusy(btn, false);
+  });
 }

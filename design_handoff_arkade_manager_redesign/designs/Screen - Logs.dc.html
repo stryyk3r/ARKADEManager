@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#020F22;}*{box-sizing:border-box;}a{color:#1FE3F5;}a:hover{color:#8FF3FB;}</style>
+</helmet>
+<div style="width:1280px;height:800px;display:flex;background:#020F22;font-family:Manrope,sans-serif;color:#F2F0F8;overflow:hidden;">
+  <dc-import name="ArkSidebar" active="logs" hint-size="232px,800px"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:26px 32px 0;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:24px;">
+      <div>
+        <h1 style="margin:0;font-size:21px;font-weight:800;letter-spacing:-.01em;">Logs</h1>
+        <p style="margin:4px 0 0;font-size:13px;color:#A9A6C4;">One log file per app launch.</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <div style="display:flex;align-items:center;gap:10px;height:34px;padding:0 10px 0 12px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:#030C1C;font-family:'JetBrains Mono',monospace;font-size:12px;color:#D9D7EA;">arkade_manager_20261027_142233.log<span style="font-family:Manrope;font-size:11px;font-weight:700;color:#34d399;">current</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8A85AB" stroke-width="2.4"><path d="m6 9 6 6 6-6"></path></svg></div>
+        <button style="height:34px;padding:0 13px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:#061730;color:#D9D7EA;font:600 13px Manrope;cursor:pointer;">Open folder</button>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;margin:20px 0 12px;">
+      <div style="display:flex;height:34px;padding:3px;border-radius:6px;background:#030C1C;border:1px solid rgba(255,255,255,.1);gap:2px;font-size:12.5px;font-weight:600;">
+        <span style="display:flex;align-items:center;gap:7px;padding:0 11px;border-radius:4px;background:#0C2340;color:#F2F0F8;">All<span style="color:#8A85AB;font-variant-numeric:tabular-nums;">1,284</span></span>
+        <span style="display:flex;align-items:center;gap:7px;padding:0 11px;color:#A9A6C4;">Info<span style="color:#8A85AB;">1,240</span></span>
+        <span style="display:flex;align-items:center;gap:7px;padding:0 11px;color:#fbbf24;">Warn<span style="color:#8A85AB;">31</span></span>
+        <span style="display:flex;align-items:center;gap:7px;padding:0 11px;color:#f87171;">Error<span style="color:#8A85AB;">13</span></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;height:34px;padding:0 10px 0 12px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:#030C1C;font-size:13px;color:#D9D7EA;">All sources<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8A85AB" stroke-width="2.4"><path d="m6 9 6 6 6-6"></path></svg></div>
+      <div style="display:flex;align-items:center;gap:8px;height:34px;width:240px;padding:0 10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:#030C1C;color:#8A85AB;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><span style="font-size:13px;">Filter by job or text</span>
+      </div>
+      <div style="flex:1;"></div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#D9D7EA;">
+        <span style="width:30px;height:18px;border-radius:9px;background:#1FE3F5;position:relative;"><span style="position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#020F22;"></span></span>Follow
+      </div>
+      <button style="height:34px;padding:0 12px;border-radius:6px;border:none;background:transparent;color:#A9A6C4;font:600 13px Manrope;cursor:pointer;">Clear view</button>
+    </div>
+
+    <div style="flex:1;min-height:0;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.08);border-bottom:none;border-radius:8px 8px 0 0;background:#030B19;overflow:hidden;">
+      <div style="display:grid;grid-template-columns:104px 58px 92px minmax(0,1fr);gap:14px;align-items:center;height:32px;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.08);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8A85AB;background:#051326;">
+        <div>Time</div><div>Level</div><div>Source</div><div>Message</div>
+      </div>
+      <div style="flex:1;min-height:0;overflow:hidden;padding:4px 0;">
+        <sc-for list="{{ lines }}" as="l" hint-placeholder-count="20">
+          <div style="display:grid;grid-template-columns:104px 58px 92px minmax(0,1fr);gap:14px;align-items:baseline;padding:4px 16px 4px 14px;border-left:2px solid {{ l.stripe }};background:{{ l.bg }};font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.55;">
+            <span style="color:#8A85AB;font-variant-numeric:tabular-nums;">{{ l.t }}</span>
+            <span style="font-weight:600;color:{{ l.lc }};">{{ l.lvl }}</span>
+            <span style="color:#A9A6C4;">{{ l.src }}</span>
+            <span style="color:{{ l.mc }};white-space:pre-wrap;">{{ l.msg }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;height:32px;padding:0 16px;border-top:1px solid rgba(255,255,255,.08);background:#051326;font-size:12px;color:#8A85AB;">
+        <span style="display:flex;align-items:center;gap:7px;"><span style="width:6px;height:6px;border-radius:50%;background:#1FE3F5;"></span>Following · refreshes every 5s</span>
+        <span style="font-family:'JetBrains Mono',monospace;">%LOCALAPPDATA%\arkade\manager\logs</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:800}}">
+class Component extends DCLogic {
+  renderVals() {
+    const C = { INFO: '#7FB8C4', WARN: '#fbbf24', ERROR: '#f87171', DEBUG: '#6F6B92' };
+    const L = (t, lvl, src, msg) => ({
+      t, lvl, src, msg, lc: C[lvl],
+      mc: lvl === 'ERROR' ? '#FCA5A5' : lvl === 'WARN' ? '#FDE68A' : lvl === 'DEBUG' ? '#8A85AB' : '#E6E4F2',
+      stripe: lvl === 'ERROR' ? '#f87171' : lvl === 'WARN' ? '#fbbf24' : 'transparent',
+      bg: lvl === 'ERROR' ? 'rgba(248,113,113,.07)' : lvl === 'WARN' ? 'rgba(251,191,36,.05)' : 'transparent',
+    });
+    return { lines: [
+      L('20:01:48.204', 'INFO', 'scheduler', 'Queued LNA_Center (interval 30 min)'),
+      L('20:01:48.311', 'INFO', 'rcon', 'LNA_Center · SaveWorld sent to 127.0.0.1:27020'),
+      L('20:01:51.902', 'INFO', 'backup', 'LNA_Center · zipping saves, map, server INI → D:\\Backups\\ASA\\LNA_Center'),
+      L('20:02:33.118', 'INFO', 'backup', 'LNA_Center · done · 156.15 MB in 41.2s'),
+      L('20:02:33.120', 'DEBUG', 'scheduler', 'Cooldown LNA_Center for 2 min'),
+      L('20:03:12.004', 'INFO', 'scheduler', 'Queued Cobblemon_Main (interval 30 min)'),
+      L('20:03:12.230', 'INFO', 'rcon', 'Cobblemon_Main · save-off confirmed · save-all flush confirmed'),
+      L('20:03:40.871', 'INFO', 'backup', 'Cobblemon_Main · staging copy 2,184 files, 7-Zip level 3, 4 threads'),
+      L('20:04:58.402', 'WARN', 'backup', 'Cobblemon_Main · region r.2.-1.mca ends on a partial sector'),
+      L('20:04:58.950', 'WARN', 'backup', 'Cobblemon_Main · completed with warnings · 220.18 MB'),
+      L('20:04:59.012', 'INFO', 'rcon', 'Cobblemon_Main · save-on'),
+      L('20:07:40.115', 'INFO', 'scheduler', 'Queued Fjordur_PvP (interval 30 min)'),
+      L('20:07:40.220', 'ERROR', 'backup', 'Fjordur_PvP · backup failed\ncaused by: RCON connect 127.0.0.1:27022\ncaused by: connection refused (os error 10061)'),
+      L('20:07:40.222', 'DEBUG', 'scheduler', 'Cooldown Fjordur_PvP for 5 min after failure'),
+      L('20:09:40.003', 'INFO', 'palworld', 'Palworld_Main · POST /v1/api/save → 200 (2.4s)'),
+      L('20:09:44.690', 'INFO', 'backup', 'Palworld_Main · done · 96.42 MB in 4.1s'),
+      L('20:10:40.000', 'INFO', 'scheduler', 'Queued LNA_TheIsland (interval 30 min)'),
+      L('20:10:40.118', 'INFO', 'rcon', 'LNA_TheIsland · SaveWorld sent to 127.0.0.1:27015'),
+      L('20:10:43.540', 'INFO', 'backup', 'LNA_TheIsland · zipping saves, map, server INI, plugin configs'),
+    ]};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,94 +1,179 @@
 import { invoke } from '@tauri-apps/api/core';
-import { state } from '../../state.js';
-import { escapeHtml } from '../../utils/dom.js';
-import { formatFileSize } from '../../utils/format.js';
+import { state, GAMES, JOB_GROUP_ORDER, getJobGroupKey, gameChipHtml } from '../../state.js';
+import { escapeHtml, storageGet, storageSet } from '../../utils/dom.js';
+import {
+  formatFileSize, formatInterval, formatClockOrDate, formatRelative, formatUntil, formatFullDate, formatTime, parseDate, plural,
+} from '../../utils/format.js';
+import { toggleMenu, addMenuItem, addMenuDivider } from '../menu.js';
 import { applyJobFilters } from './filters.js';
-import { runJobNow, openBackupLocation, updateJob, deleteJob } from './form.js';
+import { runJobNow, openBackupLocation, openEditDrawer, setJobEnabled, deleteJob } from './form.js';
 
-const JOB_GROUP_ORDER = ["asa","ase","minecraft","palworld"];
-const JOB_GROUP_META = {
-  asa: { label: 'ARK: Survival Ascended', letter: 'A', color: 'teal' },
-  ase: { label: 'ARK: Survival Evolved', letter: 'A', color: 'yellow' },
-  minecraft: { label: 'Minecraft', letter: 'M', color: 'green' },
-  palworld: { label: 'Palworld', letter: 'P', color: 'blue' },
-};
+const COLLAPSED_KEY = 'arkade.collapsedGroups';
+
+const CHEVRON = '<svg class="group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const DOTS = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
+
+export function loadCollapsedGroups() {
+  state.collapsedGroups = new Set(storageGet(COLLAPSED_KEY, []));
+}
+
+function saveCollapsedGroups() {
+  storageSet(COLLAPSED_KEY, [...state.collapsedGroups]);
+}
+
+// ---------- Progress ----------
 
 export function showBackupProgress(jobName, percent) {
-  const card = document.getElementById('backupProgressCard');
-  const nameEl = document.getElementById('backupProgressJobName');
-  const pctEl = document.getElementById('backupProgressPct');
-  const barEl = document.getElementById('backupProgressBar');
-  if (!card || !nameEl || !pctEl || !barEl) return;
-  card.classList.add('show');
-  nameEl.textContent = jobName;
-  pctEl.textContent = percent + '%';
-  barEl.style.width = percent + '%';
+  state.backupProgress = { jobName, percent };
+  refreshJobRowStates();
+  updateStatusStrip();
 }
 
 export function hideBackupProgress() {
-  const card = document.getElementById('backupProgressCard');
-  if (card) card.classList.remove('show');
+  state.backupProgress = null;
+  refreshJobRowStates();
+  updateStatusStrip();
 }
 
-export function getJobGroupKey(job) {
-  if (job.job_type === 'minecraft') return 'minecraft';
-  if (job.job_type === 'palworld') return 'palworld';
-  const cluster = job.monthly_cluster || '';
-  if (cluster === 'ASE Legacy') return 'ase';
-  if (cluster === 'Palworld') return 'palworld';
-  return 'asa';
+// ---------- Row state ----------
+
+function isWarning(error) {
+  const lower = String(error).toLowerCase();
+  return lower.includes('completed with warnings') || lower.includes('warning');
 }
 
-export function computeSuccessRate(jobs) {
-  const enabled = (jobs || []).filter(j => j.enabled);
-  if (enabled.length === 0) return '—';
-  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
-  const ok = enabled.filter(j => {
-    if (j.last_error) return false;
-    if (!j.last_run_at) return false;
-    return new Date(j.last_run_at).getTime() > dayAgo;
-  }).length;
-  return `${Math.round((ok / enabled.length) * 100)}%`;
+function firstLine(text) {
+  return String(text || '').split(/\r?\n/)[0].trim();
 }
 
-export function computeTotalStorage(jobs) {
-  const total = (jobs || []).reduce((sum, j) => sum + (j.last_file_size || 0), 0);
-  return formatFileSize(total);
+export function isJobRunning(job) {
+  return !!state.status?.current_job && state.status.current_job === job.id;
 }
 
+/** kind: 'running' | 'paused' | 'error' | 'warning' | 'scheduled' */
 export function getJobRowState(job) {
-  if (state.currentRunningJob && state.currentRunningJob === job.name) {
-    return { dot: 'running', sub: 'in progress', running: true };
-  }
+  if (isJobRunning(job)) return { kind: 'running', sub: 'Saving' };
+  if (!job.enabled) return { kind: 'paused', sub: 'Paused' };
   if (job.last_error) {
-    const lower = String(job.last_error).toLowerCase();
-    const isWarning = lower.includes('completed with warnings') || lower.includes('warning');
-    return { dot: isWarning ? 'paused' : 'error', sub: isWarning ? 'warning' : 'error', running: false };
+    return isWarning(job.last_error)
+      ? { kind: 'warning', sub: 'Completed with warnings' }
+      : { kind: 'error', sub: firstLine(job.last_error) || 'Backup failed' };
   }
-  if (!job.enabled) {
-    return { dot: 'paused', sub: 'paused', running: false };
-  }
-  return { dot: 'online', sub: '', running: false };
+  return { kind: 'scheduled', sub: '' };
 }
 
-export function updateJobCounts(jobs) {
-  const list = jobs || [];
-  const configured = document.getElementById('configuredJobsBadge');
-  if (configured) configured.textContent = `${list.length} configured`;
+function progressFor(job) {
+  const p = state.backupProgress;
+  return p && p.jobName === job.name ? p.percent : null;
+}
 
-  const enabled = list.filter(j => j.enabled).length;
-  const saving = state.currentRunningJob ? 1 : 0;
+// ---------- Rendering ----------
 
-  const activeValue = document.getElementById('statActiveValue');
-  const activeMeta = document.getElementById('statActiveMeta');
-  if (activeValue) activeValue.textContent = String(saving);
-  if (activeMeta) activeMeta.textContent = saving === 1 ? '1 saving' : `${saving} saving`;
+function timeCell(primaryHtml, rel, title) {
+  return `<div class="cell-time" title="${escapeHtml(title || '')}">${primaryHtml}${rel ? ` <span class="rel">${escapeHtml(rel)}</span>` : ''}</div>`;
+}
 
-  const successValue = document.getElementById('statSuccessValue');
-  if (successValue) successValue.textContent = computeSuccessRate(list);
+function nextCellHtml(job, rs, now) {
+  if (rs.kind === 'running') {
+    const pct = progressFor(job);
+    if (pct === null) return '<div class="cell-time"><span class="progress-pct">Saving…</span></div>';
+    return `<div class="progress"><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><span class="progress-pct">${pct}%</span></div>`;
+  }
+  if (rs.kind === 'paused' || !job.next_run_at) return '<div class="cell-time"><span class="rel">—</span></div>';
+  const rel = formatUntil(job.next_run_at, now);
+  return timeCell(
+    `<span class="t">${escapeHtml(formatClockOrDate(job.next_run_at, new Date(now)))}</span>`,
+    rs.kind === 'error' && rel !== 'due' ? `retry ${rel}` : rel,
+    formatFullDate(job.next_run_at),
+  );
+}
 
-  const storageValue = document.getElementById('statStorageValue');
-  if (storageValue) storageValue.textContent = computeTotalStorage(list);
+function lastCellHtml(job, rs, now) {
+  if (!job.last_run_at) return '<div class="cell-time"><span class="rel">Never</span></div>';
+  if (rs.kind === 'error') {
+    return timeCell('<span class="failed">Failed</span>', formatClockOrDate(job.last_run_at, new Date(now)), formatFullDate(job.last_run_at));
+  }
+  return timeCell(
+    `<span class="t">${escapeHtml(formatClockOrDate(job.last_run_at, new Date(now)))}</span>`,
+    formatRelative(job.last_run_at, now),
+    formatFullDate(job.last_run_at),
+  );
+}
+
+function jobRowInnerHtml(job, rs, now) {
+  const subClass = { running: 'running', error: 'error', warning: 'warning' }[rs.kind] || '';
+  const dotClass = rs.kind === 'scheduled' ? '' : rs.kind;
+  const menuOpen = state.jobMenuJobId === job.id;
+  return `
+    <div class="job-name-cell">
+      <span class="status-dot ${dotClass}"></span>
+      <span class="job-name" title="${escapeHtml(job.name)}">${escapeHtml(job.name)}</span>
+      ${rs.sub ? `<span class="job-sub ${subClass}" title="${escapeHtml(rs.kind === 'error' || rs.kind === 'warning' ? job.last_error : rs.sub)}">${escapeHtml(rs.sub)}</span>` : ''}
+    </div>
+    <div class="cell-muted col-interval">${escapeHtml(formatInterval(job.interval_value, job.interval_unit))}</div>
+    ${nextCellHtml(job, rs, now)}
+    ${lastCellHtml(job, rs, now)}
+    <div class="cell-size">${job.last_file_size ? escapeHtml(formatFileSize(job.last_file_size)) : '<span class="rel" style="color:var(--text-muted);font-weight:500">—</span>'}</div>
+    <div class="cell-menu">
+      <button class="row-menu-btn" type="button" data-job-menu="${escapeHtml(job.id)}" aria-haspopup="menu" aria-expanded="${menuOpen}" aria-label="Actions for ${escapeHtml(job.name)}">${DOTS}</button>
+    </div>`;
+}
+
+function rowClassName(rs, jobId) {
+  return [
+    'job-row jobs-grid',
+    rs.kind === 'running' ? 'is-running' : '',
+    rs.kind === 'paused' ? 'is-paused' : '',
+    state.jobMenuJobId === jobId ? 'menu-open' : '',
+  ].filter(Boolean).join(' ');
+}
+
+function updateRow(row, job, now) {
+  const rs = getJobRowState(job);
+  const html = jobRowInnerHtml(job, rs, now);
+  if (row._html !== html) {
+    const hadFocus = row.contains(document.activeElement);
+    row.innerHTML = html;
+    row._html = html;
+    if (hadFocus) row.querySelector('.row-menu-btn')?.focus({ preventScroll: true });
+  }
+  const className = rowClassName(rs, job.id) + (row.classList.contains('hidden-row') ? ' hidden-row' : '');
+  if (row.className !== className) row.className = className;
+}
+
+function groupMeta(groupKey, jobs) {
+  const parts = [plural(jobs.length, 'job')];
+  const failed = jobs.filter(j => getJobRowState(j).kind === 'error').length;
+  const warnings = jobs.filter(j => getJobRowState(j).kind === 'warning').length;
+  if (failed) parts.push(`${failed} failed`);
+  if (warnings) parts.push(plural(warnings, 'warning'));
+  if (!failed && !warnings && GAMES[groupKey]?.jobType === 'ark') {
+    const clusters = [...new Set(jobs.map(j => j.monthly_cluster).filter(Boolean))];
+    if (clusters.length) parts.push(clusters.join(', '));
+  }
+  return parts.join(' · ');
+}
+
+function groupHeaderInnerHtml(groupKey, jobs) {
+  const size = jobs.reduce((sum, j) => sum + (j.last_file_size || 0), 0);
+  return `
+    <span class="group-title">
+      ${CHEVRON}
+      ${gameChipHtml(groupKey)}
+      <span class="group-name">${escapeHtml(GAMES[groupKey].label)}</span>
+      <span class="group-meta">${escapeHtml(groupMeta(groupKey, jobs))}</span>
+    </span>
+    <span class="group-size">${size ? escapeHtml(formatFileSize(size)) : ''}</span>
+    <span></span>`;
+}
+
+function groupedJobs() {
+  const grouped = {};
+  for (const job of state.allJobs) {
+    const key = getJobGroupKey(job);
+    (grouped[key] ||= []).push(job);
+  }
+  return grouped;
 }
 
 export async function refreshJobs() {
@@ -102,212 +187,166 @@ export async function refreshJobs() {
 
 export function renderJobsTable(jobs) {
   state.allJobs = jobs || [];
-  const emptyAll = document.getElementById('backupEmptyAll');
-  const toolbar = document.getElementById('backupToolbar');
-  const jobsPanel = document.getElementById('jobsPanel');
-  const tbody = document.getElementById('jobsTableBody');
   const hasAny = state.allJobs.length > 0;
+  document.getElementById('backupEmptyAll').hidden = hasAny;
+  document.getElementById('backupToolbar').hidden = !hasAny;
+  document.getElementById('jobsPanel').hidden = !hasAny;
+  document.getElementById('configuredJobsBadge').textContent = plural(state.allJobs.length, 'job');
 
-  if (emptyAll) emptyAll.style.display = hasAny ? 'none' : 'block';
-  if (toolbar) toolbar.style.display = hasAny ? '' : 'none';
-  if (jobsPanel) jobsPanel.style.display = hasAny ? '' : 'none';
-
-  updateJobCounts(state.allJobs);
-  if (!tbody) return;
-  tbody.innerHTML = '';
-
-  const grouped = {};
-  for (const job of state.allJobs) {
-    const key = getJobGroupKey(job);
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(job);
-  }
+  const body = document.getElementById('jobsTableBody');
+  const scrollTop = body.scrollTop;
+  body.innerHTML = '';
+  const grouped = groupedJobs();
+  const now = Date.now();
 
   for (const groupKey of JOB_GROUP_ORDER) {
     const groupJobs = grouped[groupKey];
-    if (!groupJobs || groupJobs.length === 0) continue;
-    const meta = JOB_GROUP_META[groupKey];
-    const groupSize = groupJobs.reduce((sum, j) => sum + (j.last_file_size || 0), 0);
+    if (!groupJobs?.length) continue;
+    groupJobs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
-    const headerRow = tbody.insertRow();
-    headerRow.className = 'group-header-row';
-    headerRow.dataset.groupKey = groupKey;
-    const headerCell = headerRow.insertCell();
-    headerCell.colSpan = 6;
-    headerCell.innerHTML = `
-      <div class="group-header">
-        <div class="group-header-left">
-          <span class="group-accent group-accent-${meta.color}"></span>
-          <span class="group-icon group-icon-${meta.color}">${meta.letter}</span>
-          <span class="group-title">${escapeHtml(meta.label)}</span>
-        </div>
-        <div class="group-header-right">
-          <span class="group-size">${escapeHtml(formatFileSize(groupSize))}</span>
-          <span class="online-pill"><span class="status-dot"></span>Online</span>
-        </div>
-      </div>`;
+    const group = document.createElement('div');
+    group.className = 'job-group';
+    group.dataset.groupKey = groupKey;
+    const collapsed = state.collapsedGroups.has(groupKey);
+    group.classList.toggle('collapsed', collapsed);
 
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'group-row jobs-grid';
+    header.dataset.toggleGroup = groupKey;
+    header.setAttribute('aria-expanded', String(!collapsed));
+    header.innerHTML = groupHeaderInnerHtml(groupKey, groupJobs);
+    group.appendChild(header);
+
+    const list = document.createElement('div');
+    list.className = 'group-jobs';
     for (const job of groupJobs) {
-      appendUnifiedJobRow(tbody, job, groupKey);
+      const row = document.createElement('div');
+      row.dataset.jobId = job.id;
+      row.dataset.group = groupKey;
+      updateRow(row, job, now);
+      list.appendChild(row);
     }
+    group.appendChild(list);
+    body.appendChild(group);
   }
+
+  const noMatch = document.createElement('div');
+  noMatch.className = 'no-match';
+  noMatch.id = 'jobsNoMatch';
+  noMatch.textContent = 'No jobs match these filters.';
+  noMatch.hidden = true;
+  body.appendChild(noMatch);
+  body.scrollTop = scrollTop;
 
   applyJobFilters();
-
-  ensureJobMenuListeners();
+  updateStatusStrip();
 }
 
-export function appendUnifiedJobRow(tbody, job, groupKey) {
-  const row = tbody.insertRow();
-  row.dataset.jobId = job.id;
-  row.dataset.group = groupKey;
-  const rowState = getJobRowState(job);
+/** Refresh row contents in place (status tick, progress, relative times). */
+export function refreshJobRowStates() {
+  const now = Date.now();
+  document.querySelectorAll('#jobsTableBody .job-row[data-job-id]').forEach(row => {
+    const job = state.allJobs.find(j => j.id === row.dataset.jobId);
+    if (job) updateRow(row, job, now);
+  });
+  const grouped = groupedJobs();
+  document.querySelectorAll('#jobsTableBody .job-group').forEach(group => {
+    const jobs = grouped[group.dataset.groupKey] || [];
+    const meta = group.querySelector('.group-meta');
+    const text = groupMeta(group.dataset.groupKey, jobs);
+    if (meta && meta.textContent !== text) meta.textContent = text;
+  });
+  // Row states change over time, so a status filter has to be re-applied.
+  if (state.jobFilter.status !== 'all') applyJobFilters();
+}
 
-  const nameCell = row.insertCell();
-  nameCell.innerHTML = `
-    <div class="job-row-name">
-      <span class="job-status-dot ${rowState.dot}"></span>
-      <div class="job-name-block">
-        <span class="job-name-primary ${rowState.running ? 'running' : ''}">${escapeHtml(job.name)}</span>
-        ${rowState.sub ? `<span class="job-name-sub ${rowState.running ? 'progress' : ''}">${escapeHtml(rowState.sub)}</span>` : ''}
-      </div>
-    </div>`;
+// ---------- Collapse ----------
 
-  const intervalCell = row.insertCell();
-  intervalCell.textContent = `${job.interval_value} ${job.interval_unit}`;
-  intervalCell.className = 'cell-metric cell-metric-muted';
-
-  const nextCell = row.insertCell();
-  nextCell.textContent = job.next_run_at ? new Date(job.next_run_at).toLocaleString() : 'N/A';
-
-  const lastCell = row.insertCell();
-  if (job.last_error && !rowState.running) {
-    lastCell.innerHTML = rowState.sub === 'warning'
-      ? '<span class="cell-metric cell-metric-warn">WARNING</span>'
-      : '<span class="cell-metric cell-metric-bad">ERROR</span>';
-    lastCell.title = String(job.last_error);
-  } else {
-    lastCell.textContent = job.last_run_at ? new Date(job.last_run_at).toLocaleString() : 'Never';
-    lastCell.className = job.last_run_at ? 'cell-metric cell-metric-good' : 'cell-metric cell-metric-muted';
+export function toggleGroup(groupKey) {
+  if (state.collapsedGroups.has(groupKey)) state.collapsedGroups.delete(groupKey);
+  else state.collapsedGroups.add(groupKey);
+  saveCollapsedGroups();
+  const group = document.querySelector(`#jobsTableBody .job-group[data-group-key="${groupKey}"]`);
+  if (group) {
+    const collapsed = state.collapsedGroups.has(groupKey);
+    group.classList.toggle('collapsed', collapsed);
+    group.querySelector('.group-row')?.setAttribute('aria-expanded', String(!collapsed));
   }
-
-  const sizeCell = row.insertCell();
-  sizeCell.textContent = job.last_file_size ? formatFileSize(job.last_file_size) : 'N/A';
-  sizeCell.className = 'cell-metric cell-metric-muted';
-
-  const actionsCell = row.insertCell();
-  actionsCell.className = 'cell-actions';
-  const menuContainer = document.createElement('div');
-  menuContainer.className = 'job-menu';
-  const menuButton = document.createElement('button');
-  menuButton.className = 'job-menu-button';
-  menuButton.type = 'button';
-  menuButton.textContent = '⋯';
-  menuButton.onclick = (e) => {
-    e.stopPropagation();
-    toggleJobMenu(menuButton, dropdown);
-  };
-  const dropdown = document.createElement('div');
-  dropdown.className = 'job-menu-dropdown';
-
-  const runItem = document.createElement('button');
-  runItem.className = 'job-menu-item';
-  runItem.type = 'button';
-  runItem.textContent = 'Run Now';
-  runItem.onclick = (e) => { e.stopPropagation(); closeAllJobMenus(); runJobNow(job.id); };
-
-  const backupLocationItem = document.createElement('button');
-  backupLocationItem.className = 'job-menu-item';
-  backupLocationItem.type = 'button';
-  backupLocationItem.textContent = 'Backup Location';
-  backupLocationItem.onclick = (e) => {
-    e.stopPropagation();
-    closeAllJobMenus();
-    openBackupLocation(job.destination_dir);
-  };
-
-  const editItem = document.createElement('button');
-  editItem.className = 'job-menu-item';
-  editItem.type = 'button';
-  editItem.textContent = 'Edit';
-  editItem.onclick = (e) => {
-    e.stopPropagation();
-    closeAllJobMenus();
-    updateJob(job.id);
-  };
-
-  const deleteItem = document.createElement('button');
-  deleteItem.className = 'job-menu-item danger';
-  deleteItem.type = 'button';
-  deleteItem.textContent = 'Delete';
-  deleteItem.onclick = (e) => {
-    e.stopPropagation();
-    closeAllJobMenus();
-    deleteJob(job.id);
-  };
-
-  dropdown.appendChild(runItem);
-  dropdown.appendChild(backupLocationItem);
-  dropdown.appendChild(editItem);
-  dropdown.appendChild(deleteItem);
-  menuContainer.appendChild(menuButton);
-  menuContainer.appendChild(dropdown);
-  actionsCell.appendChild(menuContainer);
+  updateToggleAllLabel();
 }
 
-export function closeAllJobMenus() {
-  document.querySelectorAll('.job-menu-dropdown').forEach(d => {
-    d.classList.remove('show');
-    d.style.top = '';
-    d.style.left = '';
-    d.style.visibility = '';
+function visibleGroupKeys() {
+  return [...document.querySelectorAll('#jobsTableBody .job-group:not(.hidden-row)')].map(g => g.dataset.groupKey);
+}
+
+export function updateToggleAllLabel() {
+  const btn = document.getElementById('toggleGroupsBtn');
+  if (!btn) return;
+  const keys = visibleGroupKeys();
+  const allCollapsed = keys.length > 0 && keys.every(k => state.collapsedGroups.has(k));
+  btn.textContent = allCollapsed ? 'Expand all' : 'Collapse all';
+}
+
+export function toggleAllGroups() {
+  const keys = visibleGroupKeys();
+  const allCollapsed = keys.length > 0 && keys.every(k => state.collapsedGroups.has(k));
+  keys.forEach(k => (allCollapsed ? state.collapsedGroups.delete(k) : state.collapsedGroups.add(k)));
+  saveCollapsedGroups();
+  document.querySelectorAll('#jobsTableBody .job-group').forEach(group => {
+    const collapsed = state.collapsedGroups.has(group.dataset.groupKey);
+    group.classList.toggle('collapsed', collapsed);
+    group.querySelector('.group-row')?.setAttribute('aria-expanded', String(!collapsed));
+  });
+  updateToggleAllLabel();
+}
+
+// ---------- Row menu ----------
+
+function setMenuOpenFor(jobId) {
+  state.jobMenuJobId = jobId;
+  document.querySelectorAll('#jobsTableBody .job-row').forEach(row => {
+    row.classList.toggle('menu-open', row.dataset.jobId === jobId);
   });
 }
 
-export function positionJobMenuDropdown(button, dropdown) {
-  dropdown.classList.add('show');
-  dropdown.style.visibility = 'hidden';
-
-  const rect = button.getBoundingClientRect();
-  const gap = 4;
-  const height = dropdown.offsetHeight;
-  const width = dropdown.offsetWidth;
-
-  const spaceBelow = window.innerHeight - rect.bottom - gap;
-  const spaceAbove = rect.top - gap;
-  const openBelow = spaceBelow >= height || spaceBelow >= spaceAbove;
-  const top = openBelow ? rect.bottom + gap : rect.top - gap - height;
-
-  let left = rect.right - width;
-  left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
-
-  dropdown.style.top = `${Math.max(8, top)}px`;
-  dropdown.style.left = `${left}px`;
-  dropdown.style.visibility = '';
+export function openJobMenu(button, jobId) {
+  const job = state.allJobs.find(j => j.id === jobId);
+  if (!job) return;
+  const menu = toggleMenu(button, (m) => {
+    addMenuItem(m, 'Run now', () => runJobNow(job.id), { disabled: isJobRunning(job) });
+    addMenuItem(m, 'Open backup folder', () => openBackupLocation(job.destination_dir));
+    addMenuItem(m, 'Edit job…', () => openEditDrawer(job.id));
+    addMenuItem(m, job.enabled ? 'Pause schedule' : 'Resume schedule', () => setJobEnabled(job.id, !job.enabled));
+    addMenuDivider(m);
+    addMenuItem(m, 'Delete job', () => deleteJob(job.id), { danger: true });
+  }, { onClose: () => setMenuOpenFor(null) });
+  if (menu) setMenuOpenFor(jobId);
 }
 
-export function toggleJobMenu(button, dropdown) {
-  const wasOpen = dropdown.classList.contains('show');
-  closeAllJobMenus();
-  if (!wasOpen) {
-    positionJobMenuDropdown(button, dropdown);
-  }
-}
-
-export function ensureJobMenuListeners() {
-  if (window._jobMenuListenerAttached) return;
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.job-menu')) {
-      closeAllJobMenus();
+export function bindJobsTableEvents() {
+  const body = document.getElementById('jobsTableBody');
+  body.addEventListener('click', (e) => {
+    const menuBtn = e.target.closest('[data-job-menu]');
+    if (menuBtn) {
+      e.stopPropagation();
+      openJobMenu(menuBtn, menuBtn.dataset.jobMenu);
+      return;
+    }
+    const groupBtn = e.target.closest('[data-toggle-group]');
+    if (groupBtn) {
+      toggleGroup(groupBtn.dataset.toggleGroup);
+      return;
     }
   });
-  const tabContent = document.querySelector('.tab-content');
-  if (tabContent) {
-    tabContent.addEventListener('scroll', closeAllJobMenus, { passive: true });
-  }
-  window.addEventListener('resize', closeAllJobMenus);
-  window._jobMenuListenerAttached = true;
+  body.addEventListener('dblclick', (e) => {
+    const row = e.target.closest('.job-row[data-job-id]');
+    if (row && !e.target.closest('button')) openEditDrawer(row.dataset.jobId);
+  });
+  document.getElementById('toggleGroupsBtn')?.addEventListener('click', toggleAllGroups);
 }
+
+// ---------- Status ----------
 
 export async function updateStatus() {
   try {
@@ -320,79 +359,86 @@ export async function updateStatus() {
 
 export function resolveCurrentJobName(currentJobId) {
   if (!currentJobId) return null;
-  const job = state.allJobs.find(j => j.id === currentJobId);
-  return job ? job.name : null;
-}
-
-export function formatCurrentJobLabel(currentJobId) {
-  return resolveCurrentJobName(currentJobId) || 'None';
+  return state.allJobs.find(j => j.id === currentJobId)?.name ?? null;
 }
 
 export function updateStatusFromEvent(status) {
-  const indicator = document.getElementById('runningIndicator');
-  const hasActiveJob = !!status.current_job;
+  const previousJob = state.status?.current_job ?? null;
+  state.status = status || {};
+  const currentJob = state.status.current_job ?? null;
+  state.currentRunningJob = resolveCurrentJobName(currentJob);
+  if (previousJob && previousJob !== currentJob) state.backupProgress = null;
 
-  if (indicator) indicator.classList.toggle('stopped', !hasActiveJob);
+  const active = !!currentJob;
+  const statusEl = document.getElementById('sidebarSchedulerStatus');
+  statusEl?.classList.toggle('idle', !active);
+  document.getElementById('sidebarSchedulerLabel').textContent = active ? 'Running' : 'Idle';
+  const currentEl = document.getElementById('sidebarCurrentJob');
+  currentEl.textContent = state.currentRunningJob || (active ? 'Starting…' : 'None');
+  currentEl.title = currentEl.textContent;
+  document.getElementById('sidebarQueueSize').textContent = String(state.status.queue_size || 0);
+  const tick = parseDate(state.status.last_tick);
+  document.getElementById('sidebarLastTick').textContent = tick ? tick.toLocaleTimeString() : '—';
 
-  const schedulerStatus = document.getElementById('schedulerStatus');
-  if (schedulerStatus) schedulerStatus.textContent = hasActiveJob ? 'Running' : 'Idle';
-  const queueSizeEl = document.getElementById('queueSize');
-  if (queueSizeEl) queueSizeEl.textContent = status.queue_size || 0;
-  const currentJobEl = document.getElementById('currentJob');
-  if (currentJobEl) currentJobEl.textContent = formatCurrentJobLabel(status.current_job);
-  const lastTickEl = document.getElementById('lastTick');
-  if (lastTickEl) lastTickEl.textContent = status.last_tick ? new Date(status.last_tick).toLocaleString() : 'Never';
-
-  state.currentRunningJob = resolveCurrentJobName(status.current_job);
-
-  const queue = status.queue_size || 0;
-
-  const sidebarStatus = document.getElementById('sidebarSchedulerStatus');
-  const sidebarLabel = document.getElementById('sidebarSchedulerLabel');
-  const sidebarCurrentJob = document.getElementById('sidebarCurrentJob');
-  const sidebarQueueSize = document.getElementById('sidebarQueueSize');
-
-  if (sidebarStatus) sidebarStatus.classList.toggle('idle', !hasActiveJob);
-  if (sidebarLabel) sidebarLabel.textContent = hasActiveJob ? 'Running' : 'Idle';
-  if (sidebarCurrentJob) sidebarCurrentJob.textContent = formatCurrentJobLabel(status.current_job);
-  if (sidebarQueueSize) sidebarQueueSize.textContent = queue;
-
-  const statQueueValue = document.getElementById('statQueueValue');
-  const statQueueMeta = document.getElementById('statQueueMeta');
-  if (statQueueValue) statQueueValue.textContent = queue;
-  if (statQueueMeta) statQueueMeta.textContent = queue === 1 ? '1 waiting' : `${queue} waiting`;
-
-  updateJobCounts(state.allJobs);
   refreshJobRowStates();
+  updateStatusStrip();
 }
 
-export function refreshJobRowStates() {
-  document.querySelectorAll('#jobsTableBody tr[data-job-id]').forEach(row => {
-    const job = state.allJobs.find(j => j.id === row.dataset.jobId);
-    if (!job) return;
-    const state = getJobRowState(job);
-    const dot = row.querySelector('.job-status-dot');
-    if (dot) dot.className = `job-status-dot ${state.dot}`;
-    const primary = row.querySelector('.job-name-primary');
-    const block = row.querySelector('.job-name-block');
-    if (primary) {
-      primary.textContent = job.name;
-      primary.classList.toggle('running', state.running);
-    }
-    let sub = row.querySelector('.job-name-sub');
-    if (state.sub) {
-      if (!sub && block) {
-        sub = document.createElement('span');
-        sub.className = `job-name-sub ${state.running ? 'progress' : ''}`;
-        block.appendChild(sub);
-      }
-      if (sub) {
-        sub.textContent = state.sub;
-        sub.className = `job-name-sub ${state.running ? 'progress' : ''}`;
-        sub.style.display = '';
-      }
-    } else if (sub) {
-      sub.remove();
-    }
-  });
+export function computeSuccessRate(jobs) {
+  const enabled = (jobs || []).filter(j => j.enabled);
+  if (enabled.length === 0) return '—';
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  const ok = enabled.filter(j => !j.last_error && j.last_run_at && new Date(j.last_run_at).getTime() > dayAgo).length;
+  return `${Math.round((ok / enabled.length) * 100)}%`;
+}
+
+function setStatusValue(id, html, className = '') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (el._html !== html) {
+    el.innerHTML = html;
+    el._html = html;
+  }
+  el.className = `status-value ${className}`.trim();
+}
+
+export function updateStatusStrip() {
+  const jobs = state.allJobs;
+  const now = Date.now();
+
+  const running = jobs.find(isJobRunning);
+  if (running) {
+    const pct = progressFor(running);
+    setStatusValue('statRunning', `${escapeHtml(running.name)}${pct !== null ? ` <span class="sub">${pct}%</span>` : ''}`, 'is-running');
+  } else if (state.status?.current_job) {
+    setStatusValue('statRunning', 'Starting…', 'is-running');
+  } else {
+    setStatusValue('statRunning', 'Idle', 'is-muted');
+  }
+
+  setStatusValue('statQueue', String(state.status?.queue_size || 0));
+
+  const upcoming = jobs
+    .filter(j => j.enabled && j.next_run_at && !isJobRunning(j))
+    .sort((a, b) => new Date(a.next_run_at) - new Date(b.next_run_at))[0];
+  if (upcoming) {
+    setStatusValue('statNext', `${escapeHtml(upcoming.name)} <span class="sub">${escapeHtml(formatUntil(upcoming.next_run_at, now))}</span>`);
+    document.getElementById('statNext').title = `${upcoming.name} at ${formatTime(upcoming.next_run_at)}`;
+  } else {
+    setStatusValue('statNext', 'None scheduled', 'is-muted');
+  }
+
+  setStatusValue('statSuccess', computeSuccessRate(jobs));
+
+  const kinds = jobs.map(j => getJobRowState(j).kind);
+  const failed = kinds.filter(k => k === 'error').length;
+  const warnings = kinds.filter(k => k === 'warning').length;
+  if (!failed && !warnings) {
+    setStatusValue('statAttention', 'Nothing', 'is-muted');
+  } else {
+    const parts = [];
+    if (failed) parts.push(`<span class="is-failed">${failed} failed</span>`);
+    if (warnings) parts.push(`<span class="is-warning">${parts.length ? '· ' : ''}${plural(warnings, 'warning')}</span>`);
+    setStatusValue('statAttention', parts.join(' '));
+  }
 }

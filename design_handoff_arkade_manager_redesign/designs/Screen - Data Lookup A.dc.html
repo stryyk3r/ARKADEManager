@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#020F22;}*{box-sizing:border-box;}a{color:#1FE3F5;}a:hover{color:#8FF3FB;}</style>
+</helmet>
+<div style="width:1280px;height:800px;display:flex;background:#020F22;font-family:Manrope,sans-serif;color:#F2F0F8;overflow:hidden;">
+  <dc-import name="ArkSidebar" active="lookup" hint-size="232px,800px"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:26px 32px 0;">
+    <h1 style="margin:0;font-size:21px;font-weight:800;letter-spacing:-.01em;">Data Lookup</h1>
+    <p style="margin:4px 0 0;font-size:13px;color:#A9A6C4;">Find and remove a player's profile or a tribe's file across every ASA server.</p>
+
+    <div style="margin-top:20px;padding:16px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:#051326;">
+      <div style="display:flex;gap:10px;align-items:center;">
+        <div style="display:flex;height:42px;padding:3px;border-radius:6px;background:#030C1C;border:1px solid rgba(255,255,255,.1);gap:2px;font-size:13px;font-weight:600;flex:none;">
+          <span style="display:flex;align-items:center;padding:0 14px;border-radius:4px;background:#0C2340;color:#F2F0F8;">Player · EOS ID</span>
+          <span style="display:flex;align-items:center;padding:0 14px;color:#A9A6C4;">Tribe · Tribe ID</span>
+        </div>
+        <div style="flex:1;display:flex;align-items:center;gap:10px;height:42px;padding:0 12px;border-radius:6px;border:1px solid rgba(31,227,245,.55);background:#030C1C;box-shadow:0 0 0 3px rgba(31,227,245,.1);">
+          <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:.02em;color:#F2F0F8;">0002a1f8c3d94e7b8f61b2c05d7e9a43</span>
+          <span style="font-size:11.5px;font-weight:700;color:#34d399;">32 / 32 hex</span>
+        </div>
+        <button style="height:42px;padding:0 20px;border-radius:6px;border:none;background:#DD3DEE;color:#16031C;font:800 13.5px Manrope;">Search</button>
+      </div>
+      <div style="margin-top:10px;font-size:12.5px;color:#8A85AB;">Searched 6 servers under <span style="font-family:'JetBrains Mono',monospace;color:#A9A6C4;">C:\arkservers\asaservers</span> in 0.8s</div>
+    </div>
+
+    <div style="display:flex;align-items:baseline;gap:10px;margin:22px 0 10px;">
+      <h2 style="margin:0;font-size:15px;font-weight:700;">6 files found</h2>
+      <span style="font-size:13px;color:#A9A6C4;">on 5 servers · 1.9 MB</span>
+    </div>
+
+    <div style="flex:1;min-height:0;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.08);border-bottom:none;border-radius:8px 8px 0 0;background:#051326;">
+      <div style="display:grid;grid-template-columns:28px 170px 130px minmax(0,1fr) 80px 150px;gap:14px;align-items:center;height:36px;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.08);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8A85AB;">
+        <span style="width:15px;height:15px;border-radius:3px;border:1.5px solid #6F6B92;display:flex;align-items:center;justify-content:center;"><span style="width:7px;height:2px;background:#A9A6C4;"></span></span>
+        <div>Server</div><div>Map</div><div>File</div><div style="text-align:right;">Size</div><div>Modified</div>
+      </div>
+      <sc-for list="{{ rows }}" as="r" hint-placeholder-count="6">
+        <div style="display:grid;grid-template-columns:28px 170px 130px minmax(0,1fr) 80px 150px;gap:14px;align-items:center;height:46px;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.05);background:{{ r.bg }};">
+          <span style="width:15px;height:15px;border-radius:3px;display:flex;align-items:center;justify-content:center;border:1.5px solid {{ r.cb }};background:{{ r.cbg }};"><sc-if value="{{ r.on }}" hint-placeholder-val="{{ false }}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#020F22" stroke-width="4"><path d="M5 12l5 5L20 7"></path></svg></sc-if></span>
+          <span style="font-size:13px;font-weight:600;">{{ r.s }}</span>
+          <span style="font-size:13px;color:#D9D7EA;">{{ r.m }}</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#A9A6C4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.f }}</span>
+          <span style="text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;">{{ r.sz }}</span>
+          <span style="font-size:13px;color:#A9A6C4;font-variant-numeric:tabular-nums;">{{ r.d }}</span>
+        </div>
+      </sc-for>
+      <div style="flex:1;"></div>
+      <div style="display:flex;align-items:center;gap:12px;height:58px;padding:0 16px;border-top:1px solid rgba(255,255,255,.08);background:#071A33;">
+        <span style="font-size:13.5px;font-weight:700;">3 selected</span>
+        <span style="font-size:12.5px;color:#A9A6C4;">642 KB · lna-theisland, lna-center, omega-astraeos</span>
+        <div style="flex:1;"></div>
+        <button style="height:34px;padding:0 12px;border-radius:6px;border:none;background:transparent;color:#A9A6C4;font:600 13px Manrope;">Clear selection</button>
+        <button style="height:34px;padding:0 15px;border-radius:6px;border:1px solid rgba(248,113,113,.6);background:rgba(248,113,113,.12);color:#FCA5A5;font:700 13px Manrope;">Delete 3 files</button>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:800}}">
+class Component extends DCLogic {
+  renderVals() {
+    const id = '0002a1f8c3d94e7b8f61b2c05d7e9a43';
+    const R = (s, m, sz, d, on) => ({ s, m, sz, d, f: id + '.arkprofile', on: !!on, cb: on ? '#1FE3F5' : '#6F6B92', cbg: on ? '#1FE3F5' : 'transparent', bg: on ? 'rgba(31,227,245,.045)' : 'transparent' });
+    return { rows: [
+      R('lna-theisland', 'The Island', '214 KB', 'Oct 27, 7:41 PM', 1), R('lna-center', 'The Center', '208 KB', 'Oct 27, 6:12 PM', 1), R('lna-lostcolony-2', 'Lost Colony', '391 KB', 'Oct 26, 11:03 PM'),
+      R('omega-astraeos', 'Astraeos', '220 KB', 'Oct 25, 9:48 PM', 1), R('omega-extinction', 'Extinction', '512 KB', 'Oct 19, 2:20 PM'), R('omega-extinction', 'Extinction', '388 KB', 'Oct 12, 8:55 PM'),
+    ].map((r, i) => i === 5 ? { ...r, f: id + '.arkprofile.bak' } : r) };
+  }
+}
+</script>
+</body>
+</html>

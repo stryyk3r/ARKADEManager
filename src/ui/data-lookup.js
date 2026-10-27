@@ -1,316 +1,217 @@
 import { invoke } from '@tauri-apps/api/core';
-import { confirm } from '@tauri-apps/plugin-dialog';
 import { state } from '../state.js';
-import { formatFileSize } from '../utils/format.js';
+import { escapeHtml, checkHtml, setCheck, onSegmentedChange, setButtonBusy } from '../utils/dom.js';
+import { formatFileSize, formatDateTime, formatFullDate, plural } from '../utils/format.js';
+import { confirmDialog, listHtml, toast } from './feedback.js';
+import { asaServerRoot } from './plugins/servers.js';
 
-function getDataLookupType() {
-  const selected = document.querySelector('input[name="dataLookupType"]:checked');
-  return selected ? selected.value : 'profile';
+const $ = (id) => document.getElementById(id);
+
+const TYPES = {
+  profile: { placeholder: '32-character EOS ID', ext: '.arkprofile' },
+  tribe: { placeholder: 'Numeric tribe ID', ext: '.arktribe' },
+};
+
+/** { valid, hint, tone } for the current input. */
+function validate(type, raw) {
+  const value = raw.trim();
+  if (type === 'profile') {
+    if (!value) return { valid: false, hint: '', tone: '' };
+    if (!/^[0-9a-fA-F]*$/.test(value)) return { valid: false, hint: 'hex only', tone: 'is-invalid' };
+    if (value.length !== 32) return { valid: false, hint: `${value.length} / 32 hex`, tone: value.length > 32 ? 'is-invalid' : '' };
+    return { valid: true, hint: '32 / 32 hex', tone: 'is-valid' };
+  }
+  if (!value) return { valid: false, hint: '', tone: '' };
+  if (!/^\d+$/.test(value)) return { valid: false, hint: 'numbers only', tone: 'is-invalid' };
+  if (/^0+$/.test(value)) return { valid: false, hint: 'must be above 0', tone: 'is-invalid' };
+  return { valid: true, hint: 'valid ID', tone: 'is-valid' };
 }
 
-function updateDataLookupFormLabels() {
-  const lookupType = getDataLookupType();
-  const isProfile = lookupType === 'profile';
-  const label = document.getElementById('dataLookupIdentifierLabel');
-  const input = document.getElementById('dataLookupIdentifier');
-  const hint = document.getElementById('dataLookupHint');
-
-  if (label) {
-    label.textContent = isProfile ? 'EOSID' : 'TribeID';
-  }
-  if (input) {
-    input.placeholder = isProfile
-      ? '32-character hexadecimal EOSID'
-      : 'Numeric tribe ID';
-  }
-  if (hint) {
-    hint.textContent = isProfile
-      ? 'Searches ASA servers under your configured server root for .arkprofile files.'
-      : 'Searches ASA servers under your configured server root for .arktribe files.';
-  }
+function updateValidation() {
+  const result = validate(state.dataLookupType, $('dataLookupIdentifier').value);
+  const hint = $('dataLookupHint');
+  hint.textContent = result.hint;
+  hint.className = `input-hint ${result.tone}`;
+  $('dataLookupInputGroup').classList.toggle('is-invalid', result.tone === 'is-invalid');
+  if ($('dataLookupSearchBtn').dataset.label === undefined) $('dataLookupSearchBtn').disabled = !result.valid;
+  return result.valid;
 }
 
-export function setupDataLookupForm() {
-  document.querySelectorAll('input[name="dataLookupType"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      updateDataLookupFormLabels();
-      clearDataLookupResults();
-    });
-  });
-
-  const input = document.getElementById('dataLookupIdentifier');
-  if (input) {
-    input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        searchDataLookup();
-      }
-    });
-  }
-
-  updateDataLookupFormLabels();
+function renderIdleMeta() {
+  const ext = TYPES[state.dataLookupType].ext;
+  $('dataLookupMeta').innerHTML = `Searches every ASA server under <span class="mono">${escapeHtml(asaServerRoot())}</span> for ${ext} files.`;
 }
 
-function validateDataLookupIdentifier(lookupType, identifier) {
-  const trimmed = identifier.trim();
-  if (!trimmed) {
-    return lookupType === 'profile'
-      ? 'EOSID is required'
-      : 'TribeID is required';
-  }
-
-  if (lookupType === 'profile') {
-    if (trimmed.length !== 32) {
-      return 'EOSID must be exactly 32 characters';
-    }
-    if (!/^[0-9a-fA-F]+$/.test(trimmed)) {
-      return 'EOSID must contain only hexadecimal characters';
-    }
-    return null;
-  }
-
-  if (!/^\d+$/.test(trimmed)) {
-    return 'TribeID must be a positive integer';
-  }
-  if (trimmed === '0') {
-    return 'TribeID must be greater than 0';
-  }
-  return null;
-}
-
-function clearDataLookupResults() {
+function clearResults() {
   state.dataLookupResults = [];
-  const emptyState = document.getElementById('dataLookupEmptyState');
-  const table = document.getElementById('dataLookupResultsTable');
-  const tbody = document.getElementById('dataLookupResultsBody');
-  const countBadge = document.getElementById('dataLookupResultsCount');
-  const selectAll = document.getElementById('dataLookupSelectAll');
-
-  if (emptyState) {
-    emptyState.hidden = false;
-    emptyState.textContent = 'Enter an ID and click Search to find files.';
-  }
-  if (table) table.hidden = true;
-  if (tbody) tbody.innerHTML = '';
-  if (countBadge) countBadge.textContent = '0 matches';
-  if (selectAll) {
-    selectAll.checked = false;
-    selectAll.indeterminate = false;
-  }
-  updateDataLookupDeleteBtn();
+  state.lookupSelection.clear();
+  $('dataLookupResultsHead').hidden = true;
+  $('dataLookupTableHead').hidden = true;
+  $('dataLookupBar').hidden = true;
+  $('dataLookupPanel').style.marginTop = '22px';
+  $('dataLookupResultsBody').innerHTML = '<div class="empty">Enter an ID and search to find files.</div>';
 }
 
-function formatDataLookupDate(isoDate) {
-  if (!isoDate) return '—';
-  const date = new Date(isoDate);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString();
-}
-
-function renderDataLookupResults(results) {
-  state.dataLookupResults = results;
-  const emptyState = document.getElementById('dataLookupEmptyState');
-  const table = document.getElementById('dataLookupResultsTable');
-  const tbody = document.getElementById('dataLookupResultsBody');
-  const countBadge = document.getElementById('dataLookupResultsCount');
-  const selectAll = document.getElementById('dataLookupSelectAll');
-
-  if (!emptyState || !table || !tbody || !countBadge) {
-    return;
-  }
-
-  countBadge.textContent = `${results.length} match${results.length === 1 ? '' : 'es'}`;
+function renderResults() {
+  const results = state.dataLookupResults;
+  const body = $('dataLookupResultsBody');
+  $('dataLookupResultsHead').hidden = false;
+  $('dataLookupPanel').style.marginTop = '0';
+  const servers = new Set(results.map(r => r.root_dir || r.job_name));
+  const total = results.reduce((sum, r) => sum + (r.file_size || 0), 0);
+  $('dataLookupResultsCount').textContent = results.length ? `${plural(results.length, 'file')} found` : 'No files found';
+  $('dataLookupResultsMeta').textContent = results.length ? `on ${plural(servers.size, 'server')} · ${formatFileSize(total)}` : '';
+  $('dataLookupTableHead').hidden = results.length === 0;
+  $('dataLookupBar').hidden = results.length === 0;
 
   if (results.length === 0) {
-    emptyState.hidden = false;
-    emptyState.textContent = 'No matching files found on configured ARK servers.';
-    table.hidden = true;
-    tbody.innerHTML = '';
-    if (selectAll) {
-      selectAll.checked = false;
-      selectAll.indeterminate = false;
-    }
-    updateDataLookupDeleteBtn();
+    body.innerHTML = '<div class="empty">No files found for this ID.</div>';
+    renderSelection();
     return;
   }
+  body.innerHTML = results.map((r, i) => {
+    const on = state.lookupSelection.has(r.file_path);
+    return `<div class="lookup-row lookup-grid ${on ? 'selected' : ''}" data-index="${i}" role="row">
+      <button class="check-btn" type="button" aria-pressed="${on}" aria-label="Select ${escapeHtml(r.file_name)} on ${escapeHtml(r.job_name)}">${checkHtml(on)}</button>
+      <span class="server truncate" title="${escapeHtml(r.root_dir)}">${escapeHtml(r.job_name)}</span>
+      <span class="map truncate col-map">${escapeHtml(r.map)}</span>
+      <span class="file truncate" title="${escapeHtml(r.file_path)}">${escapeHtml(r.file_name)}</span>
+      <span class="size">${escapeHtml(formatFileSize(r.file_size))}</span>
+      <span class="modified col-modified" title="${escapeHtml(formatFullDate(r.modified_at))}">${escapeHtml(formatDateTime(r.modified_at))}</span>
+    </div>`;
+  }).join('');
+  renderSelection();
+}
 
-  emptyState.hidden = true;
-  table.hidden = false;
-  tbody.innerHTML = '';
-
-  results.forEach((result, index) => {
-    const row = document.createElement('tr');
-
-    const checkboxCell = document.createElement('td');
-    checkboxCell.className = 'data-lookup-checkbox-col';
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.className = 'data-lookup-row-checkbox';
-    checkbox.dataset.index = String(index);
-    checkbox.addEventListener('change', updateDataLookupDeleteBtn);
-    checkboxCell.appendChild(checkbox);
-
-    const serverCell = document.createElement('td');
-    serverCell.textContent = result.job_name;
-
-    const mapCell = document.createElement('td');
-    mapCell.textContent = result.map;
-
-    const fileCell = document.createElement('td');
-    fileCell.className = 'data-lookup-file-cell';
-    fileCell.title = result.file_path;
-    fileCell.textContent = result.file_name;
-
-    const sizeCell = document.createElement('td');
-    sizeCell.textContent = formatFileSize(result.file_size);
-
-    const modifiedCell = document.createElement('td');
-    modifiedCell.textContent = formatDataLookupDate(result.modified_at);
-
-    row.appendChild(checkboxCell);
-    row.appendChild(serverCell);
-    row.appendChild(mapCell);
-    row.appendChild(fileCell);
-    row.appendChild(sizeCell);
-    row.appendChild(modifiedCell);
-    tbody.appendChild(row);
+function renderSelection() {
+  const results = state.dataLookupResults;
+  const selected = results.filter(r => state.lookupSelection.has(r.file_path));
+  const n = selected.length;
+  document.querySelectorAll('#dataLookupResultsBody .lookup-row').forEach(row => {
+    const r = results[Number(row.dataset.index)];
+    const on = state.lookupSelection.has(r.file_path);
+    row.classList.toggle('selected', on);
+    row.querySelector('.check-btn')?.setAttribute('aria-pressed', String(on));
+    setCheck(row.querySelector('.check'), on);
   });
-
-  if (selectAll) {
-    selectAll.checked = false;
-    selectAll.indeterminate = false;
+  setCheck($('dataLookupSelectAll').querySelector('.check'), n === 0 ? false : n === results.length ? true : 'mixed');
+  $('dataLookupBar').classList.toggle('is-idle', n === 0);
+  $('dataLookupSelectedCount').textContent = `${n} selected`;
+  const size = selected.reduce((sum, r) => sum + (r.file_size || 0), 0);
+  const servers = [...new Set(selected.map(r => r.job_name))];
+  $('dataLookupSelectedDetail').textContent = n ? `${formatFileSize(size)} · ${servers.join(', ')}` : 'Select files to delete them.';
+  $('dataLookupClearBtn').disabled = n === 0;
+  const del = $('dataLookupDeleteBtn');
+  if (del.dataset.label === undefined) {
+    del.disabled = n === 0;
+    del.textContent = n ? `Delete ${plural(n, 'file')}` : 'Delete files';
   }
-  updateDataLookupDeleteBtn();
 }
 
 export async function searchDataLookup() {
-  const lookupType = getDataLookupType();
-  const input = document.getElementById('dataLookupIdentifier');
-  const searchBtn = document.getElementById('dataLookupSearchBtn');
-  const identifier = input ? input.value : '';
-  const validationError = validateDataLookupIdentifier(lookupType, identifier);
-
-  if (validationError) {
-    alert(validationError);
-    return;
-  }
-
-  if (searchBtn) {
-    searchBtn.disabled = true;
-    searchBtn.textContent = 'Searching...';
-  }
-
+  if (!updateValidation()) return;
+  const lookupType = state.dataLookupType;
+  const identifier = $('dataLookupIdentifier').value.trim();
+  const btn = $('dataLookupSearchBtn');
+  setButtonBusy(btn, true, 'Searching…');
+  const started = performance.now();
   try {
-    const results = await invoke('lookup_data_files', {
-      lookupType,
-      identifier: identifier.trim()
-    });
-    renderDataLookupResults(results);
+    const [results, roots] = await Promise.all([
+      invoke('lookup_data_files', { lookupType, identifier }),
+      invoke('get_plugin_server_roots').catch(() => null),
+    ]);
+    const seconds = ((performance.now() - started) / 1000).toFixed(1);
+    state.dataLookupResults = results;
+    state.lookupSelection.clear();
+    $('dataLookupMeta').innerHTML = `Searched ${roots ? plural(roots.length, 'server') : 'servers'} under <span class="mono">${escapeHtml(asaServerRoot())}</span> in ${seconds}s`;
+    renderResults();
   } catch (e) {
-    console.error('Data lookup failed:', e);
-    alert('Search failed: ' + e);
+    $('dataLookupMeta').innerHTML = `<span class="text-red">${escapeHtml(String(e))}</span>`;
   } finally {
-    if (searchBtn) {
-      searchBtn.disabled = false;
-      searchBtn.textContent = 'Search';
-    }
+    setButtonBusy(btn, false);
+    updateValidation();
   }
 }
 
 export function toggleDataLookupSelectAll() {
-  const selectAll = document.getElementById('dataLookupSelectAll');
-  const checkboxes = document.querySelectorAll('.data-lookup-row-checkbox');
-  if (!selectAll) return;
-
-  checkboxes.forEach(checkbox => {
-    checkbox.checked = selectAll.checked;
-  });
-  selectAll.indeterminate = false;
-  updateDataLookupDeleteBtn();
-}
-
-function updateDataLookupDeleteBtn() {
-  const deleteBtn = document.getElementById('dataLookupDeleteBtn');
-  const selectAll = document.getElementById('dataLookupSelectAll');
-  const checkboxes = Array.from(document.querySelectorAll('.data-lookup-row-checkbox'));
-  const checkedCount = checkboxes.filter(checkbox => checkbox.checked).length;
-
-  if (deleteBtn) {
-    deleteBtn.disabled = checkedCount === 0;
-    deleteBtn.textContent = checkedCount > 0
-      ? `Delete Selected (${checkedCount})`
-      : 'Delete Selected';
-  }
-
-  if (selectAll && checkboxes.length > 0) {
-    selectAll.checked = checkedCount === checkboxes.length;
-    selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
-  }
+  const all = state.dataLookupResults.length > 0 && state.lookupSelection.size === state.dataLookupResults.length;
+  state.lookupSelection.clear();
+  if (!all) state.dataLookupResults.forEach(r => state.lookupSelection.add(r.file_path));
+  renderSelection();
 }
 
 export async function deleteSelectedDataLookupFiles() {
-  const checkboxes = Array.from(document.querySelectorAll('.data-lookup-row-checkbox:checked'));
-  if (checkboxes.length === 0) {
-    alert('Select at least one file to delete.');
-    return;
-  }
+  const selected = state.dataLookupResults.filter(r => state.lookupSelection.has(r.file_path));
+  if (selected.length === 0) return;
+  const confirmed = await confirmDialog({
+    title: `Delete ${plural(selected.length, 'file')}?`,
+    body: `${listHtml(selected.map(r => `${r.job_name} — ${r.file_name}`))}
+      <p>This cannot be undone. Files may be locked while a server is running.</p>`,
+    confirmLabel: `Delete ${plural(selected.length, 'file')}`,
+    danger: true,
+  });
+  if (!confirmed) return;
 
-  const selectedResults = checkboxes
-    .map(checkbox => state.dataLookupResults[Number(checkbox.dataset.index)])
-    .filter(Boolean);
-
-  const summaryLines = selectedResults
-    .slice(0, 8)
-    .map(result => `${result.job_name} — ${result.file_name}`)
-    .join('\n');
-  const overflow = selectedResults.length > 8
-    ? `\n...and ${selectedResults.length - 8} more`
-    : '';
-
-  const confirmed = await confirm(
-    `Permanently delete ${selectedResults.length} file(s)?\n\n` +
-    `${summaryLines}${overflow}\n\n` +
-    'This cannot be undone. Files may be locked if the server is running.',
-    {
-      title: 'Delete Data Files',
-      kind: 'warning'
-    }
-  );
-
-  if (!confirmed) {
-    return;
-  }
-
-  const deleteBtn = document.getElementById('dataLookupDeleteBtn');
-  if (deleteBtn) {
-    deleteBtn.disabled = true;
-    deleteBtn.textContent = 'Deleting...';
-  }
-
+  const btn = $('dataLookupDeleteBtn');
+  setButtonBusy(btn, true, 'Deleting…');
   try {
-    const filePaths = selectedResults.map(result => result.file_path);
-    const results = await invoke('delete_data_files', { filePaths });
-    const failures = results.filter(result => !result.success);
-
-    const remaining = state.dataLookupResults.filter(result => {
-      const deleted = results.find(item => item.file_path === result.file_path);
-      return !deleted || !deleted.success;
-    });
-    renderDataLookupResults(remaining);
-
-    if (failures.length > 0) {
-      const failureLines = failures
-        .map(result => `${result.file_path}: ${result.error || 'Unknown error'}`)
-        .join('\n');
-      alert(`Deleted ${results.length - failures.length} file(s).\n\nFailed to delete:\n${failureLines}`);
+    const results = await invoke('delete_data_files', { filePaths: selected.map(r => r.file_path) });
+    const deleted = new Set(results.filter(r => r.success).map(r => r.file_path));
+    const failures = results.filter(r => !r.success);
+    state.dataLookupResults = state.dataLookupResults.filter(r => !deleted.has(r.file_path));
+    deleted.forEach(p => state.lookupSelection.delete(p));
+    if (failures.length) {
+      toast(`Deleted ${deleted.size} of ${results.length} files`, {
+        kind: 'error',
+        detail: failures.map(f => `${f.file_path}: ${f.error || 'Unknown error'}`).join('\n'),
+      });
     } else {
-      alert(`Successfully deleted ${results.length} file(s).`);
+      toast(`Deleted ${plural(deleted.size, 'file')}`, { kind: 'success' });
     }
   } catch (e) {
-    console.error('Delete failed:', e);
-    alert('Delete failed: ' + e);
+    toast('Delete failed', { kind: 'error', detail: String(e) });
   } finally {
-    updateDataLookupDeleteBtn();
+    setButtonBusy(btn, false);
+    renderResults();
   }
 }
 
+export function setupDataLookupForm() {
+  onSegmentedChange($('dataLookupType'), (value) => {
+    state.dataLookupType = value;
+    $('dataLookupIdentifier').placeholder = TYPES[value].placeholder;
+    $('dataLookupIdentifier').value = '';
+    updateValidation();
+    clearResults();
+    renderIdleMeta();
+    $('dataLookupIdentifier').focus();
+  });
+  $('dataLookupIdentifier').addEventListener('input', updateValidation);
+  $('dataLookupIdentifier').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      searchDataLookup();
+    }
+  });
+  $('dataLookupSelectAll').addEventListener('click', toggleDataLookupSelectAll);
+  $('dataLookupClearBtn').addEventListener('click', () => {
+    state.lookupSelection.clear();
+    renderSelection();
+  });
+  $('dataLookupResultsBody').addEventListener('click', (e) => {
+    const row = e.target.closest('.lookup-row');
+    if (!row) return;
+    const r = state.dataLookupResults[Number(row.dataset.index)];
+    if (!r) return;
+    if (state.lookupSelection.has(r.file_path)) state.lookupSelection.delete(r.file_path);
+    else state.lookupSelection.add(r.file_path);
+    renderSelection();
+  });
+  updateValidation();
+  renderIdleMeta();
+}
+
+/** Re-render text that depends on config (after Settings saves). */
+export function refreshDataLookupMeta() {
+  if (state.dataLookupResults.length === 0 && $('dataLookupResultsHead').hidden) renderIdleMeta();
+}

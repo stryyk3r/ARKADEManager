@@ -94,3 +94,21 @@ pub async fn save_server_roots(
     app_data.save_config(&config).map_err(|e| e.to_string())?;
     Ok(config)
 }
+
+#[tauri::command]
+pub async fn save_monthly_destination(
+    path: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<config::Config, String> {
+    let path = path.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    if let Some(p) = path.as_deref() {
+        if !std::path::Path::new(p).is_absolute() {
+            return Err("Monthly archive folder must be a full path".to_string());
+        }
+    }
+    let mut app_data = state.app_data.lock().await;
+    let mut config = app_data.get_config().map_err(|e| e.to_string())?;
+    config.monthly_archive_destination = path;
+    app_data.save_config(&config).map_err(|e| e.to_string())?;
+    Ok(config)
+}

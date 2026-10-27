@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#020F22;}*{box-sizing:border-box;}a{color:#1FE3F5;}a:hover{color:#8FF3FB;}</style>
+</helmet>
+<div style="width:1280px;height:800px;display:flex;background:#020F22;font-family:Manrope,sans-serif;color:#F2F0F8;overflow:hidden;position:relative;">
+  <dc-import name="ArkSidebar" active="backups" hint-size="232px,800px"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:26px 32px 0;">
+
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:24px;">
+      <div>
+        <div style="display:flex;align-items:baseline;gap:10px;">
+          <h1 style="margin:0;font-size:21px;font-weight:800;letter-spacing:-.01em;">Backup Jobs</h1>
+          <span style="font-size:13px;font-weight:600;color:#8A85AB;">9 jobs</span>
+        </div>
+        <p style="margin:4px 0 0;font-size:13px;color:#A9A6C4;">Scheduled saves across your game servers.</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button title="Refresh" style="width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:#061730;color:#D9D7EA;cursor:pointer;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7"></path><path d="M21 3v6h-6"></path></svg></button>
+        <button style="height:34px;padding:0 13px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:#061730;color:#D9D7EA;font:600 13px Manrope;cursor:pointer;">Run monthly</button>
+        <button style="height:34px;padding:0 15px;border-radius:6px;border:none;background:#DD3DEE;color:#16031C;font:800 13px Manrope;cursor:pointer;display:inline-flex;align-items:center;gap:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"></path></svg>Add job</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:0;margin-top:20px;border-top:1px solid rgba(255,255,255,.07);border-bottom:1px solid rgba(255,255,255,.07);">
+      <div style="padding:12px 28px 12px 0;"><div style="font-size:11.5px;font-weight:600;color:#8A85AB;">Running</div><div style="font-size:15px;font-weight:700;margin-top:2px;color:#1FE3F5;">LNA_TheIsland <span style="color:#A9A6C4;font-weight:600;font-size:13px;">64%</span></div></div>
+      <div style="padding:12px 28px;border-left:1px solid rgba(255,255,255,.07);"><div style="font-size:11.5px;font-weight:600;color:#8A85AB;">Queue</div><div style="font-size:15px;font-weight:700;margin-top:2px;">0</div></div>
+      <div style="padding:12px 28px;border-left:1px solid rgba(255,255,255,.07);"><div style="font-size:11.5px;font-weight:600;color:#8A85AB;">Next save</div><div style="font-size:15px;font-weight:700;margin-top:2px;">LNA_Center <span style="color:#A9A6C4;font-weight:600;font-size:13px;">in 12 min</span></div></div>
+      <div style="padding:12px 28px;border-left:1px solid rgba(255,255,255,.07);"><div style="font-size:11.5px;font-weight:600;color:#8A85AB;">Success, 24h</div><div style="font-size:15px;font-weight:700;margin-top:2px;">94%</div></div>
+      <div style="padding:12px 28px;border-left:1px solid rgba(255,255,255,.07);"><div style="font-size:11.5px;font-weight:600;color:#8A85AB;">Needs attention</div><div style="font-size:15px;font-weight:700;margin-top:2px;color:#f87171;">1 failed <span style="color:#fbbf24;">· 1 warning</span></div></div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;margin:16px 0 12px;">
+      <div style="display:flex;align-items:center;gap:8px;height:34px;width:250px;padding:0 10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:#030C1C;color:#8A85AB;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+        <span style="font-size:13px;">Search jobs, maps, paths</span>
+      </div>
+      <div style="display:flex;height:34px;padding:3px;border-radius:6px;background:#030C1C;border:1px solid rgba(255,255,255,.1);gap:2px;font-size:12.5px;font-weight:600;">
+        <span style="display:flex;align-items:center;padding:0 11px;border-radius:4px;background:#0C2340;color:#F2F0F8;">All</span>
+        <span style="display:flex;align-items:center;padding:0 11px;color:#A9A6C4;">ASA</span>
+        <span style="display:flex;align-items:center;padding:0 11px;color:#A9A6C4;">ASE</span>
+        <span style="display:flex;align-items:center;padding:0 11px;color:#A9A6C4;">Minecraft</span>
+        <span style="display:flex;align-items:center;padding:0 11px;color:#A9A6C4;">Palworld</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;height:34px;padding:0 10px 0 12px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:#030C1C;font-size:13px;color:#D9D7EA;">Any status<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8A85AB" stroke-width="2.4"><path d="m6 9 6 6 6-6"></path></svg></div>
+      <div style="flex:1;"></div>
+      <button onClick="{{ toggleAll }}" style="height:34px;padding:0 12px;border-radius:6px;border:none;background:transparent;color:#A9A6C4;font:600 13px Manrope;cursor:pointer;">{{ toggleAllLabel }}</button>
+      <button style="height:34px;padding:0 12px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:#061730;color:#D9D7EA;font:600 13px Manrope;cursor:pointer;">Monthly status</button>
+    </div>
+
+    <div style="flex:1;min-height:0;border:1px solid rgba(255,255,255,.08);border-bottom:none;border-radius:8px 8px 0 0;background:#051326;position:relative;">
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) 96px 176px 176px 92px 36px;gap:16px;align-items:center;height:36px;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.08);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8A85AB;">
+        <div>Job</div><div>Interval</div><div>Next save</div><div>Last save</div><div style="text-align:right;">Size</div><div></div>
+      </div>
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+        <div onClick="{{ g.toggle }}" style="display:grid;grid-template-columns:minmax(0,1fr) 96px 176px 176px 92px 36px;gap:16px;align-items:center;height:42px;padding:0 16px;background:#041021;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;user-select:none;">
+          <div style="grid-column:1 / span 4;display:flex;align-items:center;gap:10px;">
+            <sc-if value="{{ g.open }}" hint-placeholder-val="{{ true }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A85AB" stroke-width="2.4"><path d="m6 9 6 6 6-6"></path></svg></sc-if>
+            <sc-if value="{{ g.closed }}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A85AB" stroke-width="2.4"><path d="m9 6 6 6-6 6"></path></svg></sc-if>
+            <span style="width:20px;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;background:{{ g.tint }};color:{{ g.color }};">{{ g.letter }}</span>
+            <span style="font-size:13.5px;font-weight:700;">{{ g.name }}</span>
+            <span style="font-size:12.5px;color:#8A85AB;">{{ g.meta }}</span>
+          </div>
+          <div style="text-align:right;font-size:12.5px;color:#A9A6C4;font-variant-numeric:tabular-nums;">{{ g.size }}</div>
+          <div></div>
+        </div>
+        <sc-if value="{{ g.open }}" hint-placeholder-val="{{ true }}">
+          <sc-for list="{{ g.jobs }}" as="j" hint-placeholder-count="2">
+            <div style="position:relative;display:grid;grid-template-columns:minmax(0,1fr) 96px 176px 176px 92px 36px;gap:16px;align-items:center;height:46px;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.05);background:{{ j.rowBg }};">
+              <div style="display:flex;align-items:center;gap:10px;min-width:0;padding-left:34px;">
+                <span style="width:7px;height:7px;border-radius:50%;flex:none;background:{{ j.dot }};"></span>
+                <span style="font-size:13.5px;font-weight:600;color:{{ j.nameColor }};white-space:nowrap;">{{ j.name }}</span>
+                <span style="font-size:12px;font-weight:600;color:{{ j.subColor }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ j.sub }}</span>
+              </div>
+              <div style="font-size:13px;color:#A9A6C4;">{{ j.interval }}</div>
+              <sc-if value="{{ j.running }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <div style="flex:1;height:4px;border-radius:2px;background:rgba(31,227,245,.15);overflow:hidden;"><div style="width:64%;height:100%;background:#1FE3F5;"></div></div>
+                  <span style="font-size:12.5px;font-weight:700;color:#1FE3F5;font-variant-numeric:tabular-nums;">64%</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ j.idle }}" hint-placeholder-val="{{ true }}">
+                <div style="font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap;"><span style="color:#E6E4F2;">{{ j.next }}</span> <span style="color:#8A85AB;">{{ j.nextRel }}</span></div>
+              </sc-if>
+              <div style="font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap;"><span style="color:{{ j.lastColor }};font-weight:{{ j.lastWeight }};">{{ j.last }}</span> <span style="color:#8A85AB;">{{ j.lastRel }}</span></div>
+              <div style="text-align:right;font-size:13px;font-weight:600;color:#E6E4F2;font-variant-numeric:tabular-nums;">{{ j.size }}</div>
+              <div style="display:flex;justify-content:center;"><span style="width:28px;height:28px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#A9A6C4;background:{{ j.menuBg }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg></span></div>
+              <sc-if value="{{ j.menu }}" hint-placeholder-val="{{ false }}">
+                <div style="position:absolute;right:14px;top:42px;z-index:5;width:200px;padding:5px;border-radius:8px;background:#0A1D38;border:1px solid rgba(255,255,255,.12);box-shadow:0 16px 40px rgba(0,0,0,.5);font-size:13px;font-weight:600;">
+                  <div style="padding:8px 10px;border-radius:5px;background:rgba(31,227,245,.08);color:#F2F0F8;">Run now</div>
+                  <div style="padding:8px 10px;color:#D9D7EA;">Open backup folder</div>
+                  <div style="padding:8px 10px;color:#D9D7EA;">Edit job…</div>
+                  <div style="padding:8px 10px;color:#D9D7EA;">Pause schedule</div>
+                  <div style="height:1px;background:rgba(255,255,255,.08);margin:4px 0;"></div>
+                  <div style="padding:8px 10px;color:#f87171;">Delete job</div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </sc-if>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:800},&quot;showMenu&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  state = { closed: { mc: true } };
+  toggle(k) { this.setState(s => ({ closed: { ...s.closed, [k]: !s.closed[k] } })); }
+  renderVals() {
+    const showMenu = this.props.showMenu ?? true;
+    const J = (name, o = {}) => ({
+      name, interval: o.interval || '30 min', next: o.next || '—', nextRel: o.nextRel || '', last: o.last || '—', lastRel: o.lastRel || '',
+      size: o.size || '—', sub: o.sub || '', subColor: o.subColor || '#8A85AB', dot: o.dot || '#34d399',
+      nameColor: o.nameColor || '#F2F0F8', lastColor: o.lastColor || '#E6E4F2', lastWeight: o.lastColor ? 700 : 500,
+      running: !!o.running, idle: !o.running, menu: !!o.menu && showMenu,
+      rowBg: o.running ? 'rgba(31,227,245,.045)' : (o.menu && showMenu ? 'rgba(255,255,255,.025)' : 'transparent'),
+      menuBg: o.menu && showMenu ? 'rgba(255,255,255,.08)' : 'transparent',
+    });
+    const G = [
+      { key: 'asa', letter: 'A', name: 'ARK: Survival Ascended', meta: '3 jobs · ASA Legacy', size: '473.9 MB', color: '#1FE3F5', tint: 'rgba(31,227,245,.14)', jobs: [
+        J('LNA_TheIsland', { running: true, dot: '#1FE3F5', sub: 'Saving', subColor: '#1FE3F5', last: '7:40 PM', lastRel: '30 min ago', size: '158.4 MB' }),
+        J('LNA_Center', { menu: true, next: '8:31 PM', nextRel: 'in 12 min', last: '8:01 PM', lastRel: '18 min ago', size: '156.2 MB' }),
+        J('LNA_LostColony_2', { next: '8:25 PM', nextRel: 'in 6 min', last: '7:55 PM', lastRel: '24 min ago', size: '159.3 MB' }),
+      ]},
+      { key: 'ase', letter: 'A', name: 'ARK: Survival Evolved', meta: '3 jobs · ASE Legacy', size: '310.2 MB', color: '#fbbf24', tint: 'rgba(251,191,36,.14)', jobs: [
+        J('Ragnarok_Main', { next: '8:20 PM', nextRel: 'in 1 min', last: '7:50 PM', lastRel: '29 min ago', size: '112.8 MB' }),
+        J('Fjordur_PvP', { dot: '#f87171', sub: 'RCON connection refused', subColor: '#f87171', next: '8:40 PM', nextRel: 'retry in 21 min', last: 'Failed', lastColor: '#f87171', lastRel: '7:40 PM', size: '111.8 MB' }),
+        J('Valguero_PvE', { dot: '#6F6B92', nameColor: '#A9A6C4', sub: 'Paused', interval: '60 min', last: '5:15 PM', lastRel: '3 h ago', size: '85.6 MB' }),
+      ]},
+      { key: 'mc', letter: 'M', name: 'Minecraft', meta: '2 jobs · 1 warning', size: '641.9 MB', color: '#34d399', tint: 'rgba(52,211,153,.14)', jobs: [
+        J('SMP_Survival', { interval: '10 min', next: '8:24 PM', nextRel: 'in 5 min', last: '8:14 PM', lastRel: '5 min ago', size: '421.7 MB' }),
+        J('Cobblemon_Main', { dot: '#fbbf24', sub: 'Completed with warnings', subColor: '#fbbf24', next: '8:33 PM', nextRel: 'in 14 min', last: '8:03 PM', lastRel: '16 min ago', size: '220.2 MB' }),
+      ]},
+      { key: 'pal', letter: 'P', name: 'Palworld', meta: '1 job', size: '96.4 MB', color: '#7AA7FF', tint: 'rgba(122,167,255,.14)', jobs: [
+        J('Palworld_Main', { next: '8:29 PM', nextRel: 'in 10 min', last: '7:59 PM', lastRel: '20 min ago', size: '96.4 MB' }),
+      ]},
+    ];
+    const c = this.state.closed;
+    const anyOpen = G.some(g => !c[g.key]);
+    return {
+      groups: G.map(g => ({ ...g, open: !c[g.key], closed: !!c[g.key], toggle: () => this.toggle(g.key) })),
+      toggleAllLabel: anyOpen ? 'Collapse all' : 'Expand all',
+      toggleAll: () => this.setState({ closed: Object.fromEntries(G.map(g => [g.key, anyOpen])) }),
+    };
+  }
+}
+</script>
+</body>
+</html>

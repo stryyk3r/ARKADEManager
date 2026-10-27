@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#020F22;}*{box-sizing:border-box;}a{color:#1FE3F5;}a:hover{color:#8FF3FB;}</style>
+</helmet>
+<div style="width:1280px;height:1180px;display:flex;background:#020F22;font-family:Manrope,sans-serif;color:#F2F0F8;overflow:hidden;">
+  <dc-import name="ArkSidebar" active="settings" hint-size="232px,1180px"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:26px 32px 32px;">
+    <h1 style="margin:0;font-size:21px;font-weight:800;letter-spacing:-.01em;">Settings</h1>
+    <p style="margin:4px 0 0;font-size:13px;color:#A9A6C4;">Stored in <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#D9D7EA;">%LOCALAPPDATA%\arkade\manager\config.json</span></p>
+
+    <div style="display:flex;gap:40px;margin-top:24px;">
+      <div style="width:168px;flex:none;display:flex;flex-direction:column;gap:2px;font-size:13px;font-weight:600;">
+        <div style="padding:7px 10px;border-radius:5px;background:rgba(255,255,255,.05);color:#F2F0F8;">Server directories</div>
+        <div style="padding:7px 10px;color:#A9A6C4;">Monthly archive</div>
+        <div style="padding:7px 10px;color:#A9A6C4;">ARK maps</div>
+        <div style="padding:7px 10px;color:#A9A6C4;">Appearance</div>
+        <div style="padding:7px 10px;color:#A9A6C4;">Updates</div>
+      </div>
+
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+        <div style="padding-bottom:26px;border-bottom:1px solid rgba(255,255,255,.07);">
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:20px;">
+            <div>
+              <h2 style="margin:0;font-size:15px;font-weight:700;">Server directories</h2>
+              <p style="margin:4px 0 0;font-size:13px;color:#A9A6C4;max-width:560px;">Parent folders holding each game's servers. Plugins, Toggle and Data Lookup scan the subfolders.</p>
+            </div>
+            <button style="height:32px;padding:0 14px;border-radius:6px;border:none;background:#DD3DEE;color:#16031C;font:800 13px Manrope;">Save</button>
+          </div>
+          <div style="margin-top:16px;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:#051326;">
+            <div style="display:grid;grid-template-columns:200px minmax(0,1fr) 80px 120px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06);">
+              <span style="display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;"><span style="width:8px;height:8px;border-radius:2px;background:#1FE3F5;"></span>ARK: Survival Ascended</span>
+              <div style="height:32px;display:flex;align-items:center;padding:0 10px;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:#030C1C;font-family:'JetBrains Mono',monospace;font-size:12px;color:#E6E4F2;">C:\arkservers\asaservers</div>
+              <button style="height:32px;border-radius:5px;border:1px solid rgba(255,255,255,.12);background:#061730;color:#D9D7EA;font:600 12.5px Manrope;">Browse</button>
+              <span style="font-size:12.5px;font-weight:600;color:#34d399;">6 servers found</span>
+            </div>
+            <div style="display:grid;grid-template-columns:200px minmax(0,1fr) 80px 120px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06);">
+              <span style="display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;"><span style="width:8px;height:8px;border-radius:2px;background:#34d399;"></span>Minecraft</span>
+              <div style="height:32px;display:flex;align-items:center;padding:0 10px;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:#030C1C;font-family:'JetBrains Mono',monospace;font-size:12px;color:#E6E4F2;">C:\minecraftservers</div>
+              <button style="height:32px;border-radius:5px;border:1px solid rgba(255,255,255,.12);background:#061730;color:#D9D7EA;font:600 12.5px Manrope;">Browse</button>
+              <span style="font-size:12.5px;font-weight:600;color:#34d399;">2 servers found</span>
+            </div>
+            <div style="display:grid;grid-template-columns:200px minmax(0,1fr) 80px 120px;gap:14px;align-items:center;padding:12px 14px;">
+              <span style="display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;"><span style="width:8px;height:8px;border-radius:2px;background:#7AA7FF;"></span>Palworld</span>
+              <div style="height:32px;display:flex;align-items:center;padding:0 10px;border-radius:5px;border:1px solid rgba(251,191,36,.45);background:#030C1C;font-family:'JetBrains Mono',monospace;font-size:12px;color:#E6E4F2;">C:\palservers</div>
+              <button style="height:32px;border-radius:5px;border:1px solid rgba(255,255,255,.12);background:#061730;color:#D9D7EA;font:600 12.5px Manrope;">Browse</button>
+              <span style="font-size:12.5px;font-weight:600;color:#fbbf24;">Folder not found</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="padding:26px 0;border-bottom:1px solid rgba(255,255,255,.07);">
+          <h2 style="margin:0;font-size:15px;font-weight:700;">Monthly archive</h2>
+          <p style="margin:4px 0 0;font-size:13px;color:#A9A6C4;max-width:640px;">The first two backups of each month per job are copied into the job's cluster folder. Same-drive copies are hard links.</p>
+          <div style="display:flex;gap:10px;margin-top:14px;max-width:640px;">
+            <div style="flex:1;height:32px;display:flex;align-items:center;padding:0 10px;border-radius:5px;border:1px solid rgba(255,255,255,.1);background:#030C1C;font-family:'JetBrains Mono',monospace;font-size:12px;color:#E6E4F2;">D:\Backups\FOTM</div>
+            <button style="height:32px;padding:0 14px;border-radius:5px;border:1px solid rgba(255,255,255,.12);background:#061730;color:#D9D7EA;font:600 12.5px Manrope;">Browse</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#A9A6C4;">
+            <span style="padding:3px 7px;border-radius:4px;background:rgba(255,255,255,.05);">ASA Legacy</span><span style="padding:3px 7px;border-radius:4px;background:rgba(255,255,255,.05);">ASE Legacy</span><span style="padding:3px 7px;border-radius:4px;background:rgba(255,255,255,.05);">ASA Omega</span><span style="padding:3px 7px;border-radius:4px;background:rgba(255,255,255,.05);">Minecraft</span><span style="padding:3px 7px;border-radius:4px;background:rgba(255,255,255,.05);">Palworld</span>
+          </div>
+        </div>
+
+        <div style="padding:26px 0;border-bottom:1px solid rgba(255,255,255,.07);">
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:20px;">
+            <div>
+              <h2 style="margin:0;font-size:15px;font-weight:700;">ARK maps</h2>
+              <p style="margin:4px 0 0;font-size:13px;color:#A9A6C4;max-width:600px;">Listed when creating ARK jobs. Jobs store the ID; folder and file name build the save path.</p>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button style="height:32px;padding:0 12px;border-radius:6px;border:none;background:transparent;color:#A9A6C4;font:600 13px Manrope;">Reset defaults</button>
+              <button style="height:32px;padding:0 12px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:#061730;color:#D9D7EA;font:600 13px Manrope;">Add map</button>
+              <button style="height:32px;padding:0 14px;border-radius:6px;border:none;background:#DD3DEE;color:#16031C;font:800 13px Manrope;">Save</button>
+            </div>
+          </div>
+          <div style="margin-top:16px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:#051326;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1.1fr 28px;gap:12px;align-items:center;height:32px;padding:0 14px;border-bottom:1px solid rgba(255,255,255,.08);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8A85AB;">
+              <div>Display name</div><div>ID</div><div>Saves folder</div><div>Map file</div><div></div>
+            </div>
+            <sc-for list="{{ maps }}" as="m" hint-placeholder-count="7">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1.1fr 28px;gap:12px;align-items:center;height:38px;padding:0 14px;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px;">
+                <span style="font-weight:600;">{{ m.n }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#D9D7EA;">{{ m.id }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#A9A6C4;">{{ m.f }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#A9A6C4;">{{ m.file }}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6F6B92" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="padding:26px 0;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <h2 style="margin:0;font-size:15px;font-weight:700;">Appearance</h2>
+            <p style="margin:4px 0 0;font-size:13px;color:#A9A6C4;">Theme for the whole app.</p>
+          </div>
+          <div style="display:flex;height:32px;padding:3px;border-radius:6px;background:#030C1C;border:1px solid rgba(255,255,255,.1);gap:2px;font-size:12.5px;font-weight:600;">
+            <span style="display:flex;align-items:center;padding:0 14px;border-radius:4px;background:#0C2340;color:#F2F0F8;">Dark</span>
+            <span style="display:flex;align-items:center;padding:0 14px;color:#A9A6C4;">Light</span>
+          </div>
+        </div>
+
+        <div style="padding:26px 0 0;display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <h2 style="margin:0;font-size:15px;font-weight:700;">Updates</h2>
+            <p style="margin:4px 0 0;font-size:13px;color:#A9A6C4;"><span style="font-family:'JetBrains Mono',monospace;color:#F2F0F8;">v2.6.1</span> · released Oct 27, 2026 · <span style="color:#34d399;font-weight:600;">Up to date</span></p>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button style="height:32px;padding:0 12px;border-radius:6px;border:none;background:transparent;color:#A9A6C4;font:600 13px Manrope;">Release notes</button>
+            <button style="height:32px;padding:0 12px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:#061730;color:#D9D7EA;font:600 13px Manrope;">Check now</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:1180}}">
+class Component extends DCLogic {
+  renderVals() {
+    const M = (n, id) => ({ n, id, f: id + '_WP', file: id + '_WP.ark' });
+    return { maps: [M('The Island', 'TheIsland'), M('Scorched Earth', 'ScorchedEarth'), M('The Center', 'TheCenter'), M('Aberration', 'Aberration'), M('Extinction', 'Extinction'), M('Ragnarok', 'Ragnarok'), M('Lost Colony', 'LostColony'), M('Astraeos', 'Astraeos')] };
+  }
+}
+</script>
+</body>
+</html>

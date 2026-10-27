@@ -1,459 +1,363 @@
 import { invoke } from '@tauri-apps/api/core';
-import { open, confirm } from '@tauri-apps/plugin-dialog';
-import { state } from '../../state.js';
-import { setSelectValue } from '../../utils/dom.js';
+import { open } from '@tauri-apps/plugin-dialog';
+import { state, GAMES, getJobGroupKey, gameChipHtml } from '../../state.js';
+import { escapeHtml, setSelectValue, populateMapSelect, getSwitch, setSwitch, bindSwitch, setButtonBusy } from '../../utils/dom.js';
+import { formatFileSize, formatTime, formatUntil, shortenPath, joinPath } from '../../utils/format.js';
+import { openOverlay, closeOverlay, confirmDialog, toast, toastError } from '../feedback.js';
 import { refreshMapSelects } from '../settings/maps.js';
 import { refreshJobs } from './table.js';
 
-export async function pickRootDir() {
-  try {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: 'Select Server Root Directory'
-    });
-    if (selected) {
-      document.getElementById('rootDir').value = selected;
-      clearError('rootDirError');
-    }
-  } catch (e) {
-    console.error('Failed to pick directory:', e);
-    alert('Failed to open directory picker: ' + e.message);
-  }
+const $ = (id) => document.getElementById(id);
+
+const ENABLED_HINTS = {
+  ark: 'RCON SaveWorld runs first when enabled in GameUserSettings.ini',
+  minecraft: 'Saving pauses over RCON while the world is copied',
+  palworld: 'A REST API save runs first, using PalWorldSettings.ini',
+};
+
+let drawerSnapshot = null;
+
+// ---------- Shared job actions ----------
+
+/** The editable fields of a saved job, as `update_job` expects them. */
+export function jobToInput(job) {
+  return {
+    id: job.id,
+    job_type: job.job_type || 'ark',
+    monthly_cluster: job.monthly_cluster,
+    name: job.name,
+    root_dir: job.root_dir,
+    destination_dir: job.destination_dir,
+    map: job.map || '',
+    include_saves: !!job.include_saves,
+    include_map: !!job.include_map,
+    include_server_files: !!job.include_server_files,
+    include_plugin_configs: !!job.include_plugin_configs,
+    interval_value: job.interval_value,
+    interval_unit: job.interval_unit,
+    retention_days: job.retention_days,
+    enabled: !!job.enabled,
+    rcon_host: job.rcon_host ?? null,
+    rcon_port: job.rcon_port ?? null,
+    rcon_password: job.rcon_password ?? null,
+  };
 }
-
-export async function pickDestinationDir() {
-  try {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: 'Select Destination Directory'
-    });
-    if (selected) {
-      document.getElementById('destinationDir').value = selected;
-      clearError('destinationDirError');
-    }
-  } catch (e) {
-    console.error('Failed to pick directory:', e);
-    alert('Failed to open directory picker: ' + e.message);
-  }
-}
-
-export function cancelJobForm() {
-  const formContainer = document.getElementById('jobFormContainer');
-  formContainer.style.display = 'none';
-  formContainer.style.visibility = 'hidden';
-  formContainer.style.height = '0';
-  formContainer.style.overflow = 'hidden';
-  formContainer.classList.remove('show');
-  clearForm();
-  state.currentJobId = null;
-};
-
-export async function addJob() {
-  try {
-    const job = collectJobData();
-    if (!job) return;
-    
-    await invoke('add_job', { job });
-    clearForm();
-    const formContainer = document.getElementById('jobFormContainer');
-    formContainer.style.display = 'none';
-    formContainer.style.visibility = 'hidden';
-    formContainer.style.height = '0';
-    formContainer.style.overflow = 'hidden';
-    formContainer.classList.remove('show');
-    await refreshJobs();
-  } catch (e) {
-    alert('Failed to add job: ' + e);
-  }
-};
-
-export async function updateJob(jobId) {
-  if (!jobId) {
-    jobId = state.currentJobId;
-  }
-  
-  if (!jobId) {
-    alert('Please select a job to update');
-    return;
-  }
-  
-  try {
-    // Load job into form
-    const jobs = await invoke('list_jobs');
-    const job = jobs.find(j => j.id === jobId);
-    if (!job) {
-      alert('Job not found');
-      return;
-    }
-    
-    await loadJobIntoForm(job);
-    const formContainer = document.getElementById('jobFormContainer');
-    formContainer.style.display = 'block';
-    formContainer.style.visibility = 'visible';
-    formContainer.style.height = 'auto';
-    formContainer.style.overflow = 'visible';
-    formContainer.classList.add('show');
-    document.getElementById('jobFormTitle').textContent = 'Edit Job';
-    document.getElementById('submitJobBtn').textContent = 'Update Job';
-    document.getElementById('submitJobBtn').onclick = async () => {
-      try {
-        const jobData = collectJobData();
-        if (!jobData) return;
-        
-        jobData.id = state.currentJobId;
-        await invoke('update_job', { job: jobData });
-        clearForm();
-        const formContainer = document.getElementById('jobFormContainer');
-        formContainer.style.display = 'none';
-        formContainer.style.visibility = 'hidden';
-        formContainer.style.height = '0';
-        formContainer.style.overflow = 'hidden';
-        formContainer.classList.remove('show');
-        await refreshJobs();
-      } catch (e) {
-        alert('Failed to update job: ' + e);
-      }
-    };
-    document.getElementById('jobFormContainer').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  } catch (e) {
-    alert('Failed to load job: ' + e);
-  }
-};
-
-export async function deleteJob(jobId) {
-  if (!jobId) {
-    jobId = state.currentJobId;
-  }
-  
-  if (!jobId) {
-    alert('Please select a job to delete');
-    return;
-  }
-  
-  // Use Tauri's confirm dialog which properly blocks execution
-  const confirmed = await confirm('Are you sure you want to delete this job?', {
-    title: 'Delete Job',
-    kind: 'warning',
-  });
-  
-  if (!confirmed) {
-    return;
-  }
-  
-  try {
-    await invoke('delete_job', { id: jobId });
-    if (state.currentJobId === jobId) {
-      clearForm();
-      const formContainer = document.getElementById('jobFormContainer');
-      formContainer.style.display = 'none';
-      formContainer.style.visibility = 'hidden';
-      formContainer.style.height = '0';
-      formContainer.style.overflow = 'hidden';
-      formContainer.classList.remove('show');
-    }
-    await refreshJobs();
-  } catch (e) {
-    alert('Failed to delete job: ' + e);
-  }
-};
 
 export async function runJobNow(jobId) {
-  if (!jobId) {
-    jobId = state.currentJobId;
-  }
-  
-  if (!jobId) {
-    alert('Please select a job to run');
-    return;
-  }
-  
+  const job = state.allJobs.find(j => j.id === jobId);
   try {
     await invoke('run_job_now', { id: jobId });
-    alert('Job queued for execution');
+    toast(`${job?.name || 'Job'} queued`, { kind: 'success', detail: 'It starts when the scheduler is free.' });
   } catch (e) {
-    alert('Failed to run job: ' + e);
+    toastError('Could not run the job', e);
   }
-};
+}
 
 export async function openBackupLocation(destinationDir) {
   if (!destinationDir || !destinationDir.trim()) {
-    alert('No backup location set for this job');
+    toast('No backup folder is set for this job', { kind: 'warning' });
     return;
   }
   try {
     await invoke('open_backup_location', { path: destinationDir });
   } catch (e) {
-    alert('Failed to open backup location: ' + e);
+    toastError('Could not open the backup folder', e);
   }
-};
+}
 
-export async function openLogsFolder() {
+export async function setJobEnabled(jobId, enabled) {
+  const job = state.allJobs.find(j => j.id === jobId);
+  if (!job) return;
   try {
-    await invoke('open_logs_folder');
+    await invoke('update_job', { job: { ...jobToInput(job), enabled } });
+    await refreshJobs();
+    toast(enabled ? `Resumed ${job.name}` : `Paused ${job.name}`, { kind: 'success' });
   } catch (e) {
-    alert('Failed to open logs folder: ' + e);
+    toastError(enabled ? 'Could not resume the schedule' : 'Could not pause the schedule', e);
   }
-};
+}
 
-export function clearForm() {
-  document.getElementById('rootDir').value = '';
-  document.getElementById('destinationDir').value = '';
-  setSelectValue(document.getElementById('mapSelect'), '');
-  document.getElementById('jobName').value = '';
-  document.getElementById('jobNameMinecraft').value = '';
-  document.getElementById('includeSaves').checked = false;
-  document.getElementById('includeMap').checked = false;
-  document.getElementById('includeServerFiles').checked = false;
-  document.getElementById('includePluginConfigs').checked = false;
-  document.getElementById('intervalValue').value = '1';
-  document.getElementById('intervalUnit').value = 'minutes';
-  document.getElementById('intervalValueMinecraft').value = '1';
-  document.getElementById('intervalUnitMinecraft').value = 'minutes';
-  document.getElementById('retentionDays').value = '7';
-  document.getElementById('enabled').checked = false;
-  setJobFormVisibilityForType('ark');
-  clearAllErrors();
-};
-
-export async function showMonthlyStatus() {
+/** Ask, then delete. Resolves true when the job was deleted. */
+export async function deleteJob(jobId) {
+  const job = state.allJobs.find(j => j.id === jobId);
+  if (!job) return false;
+  const confirmed = await confirmDialog({
+    title: `Delete ${job.name}?`,
+    body: `<p>The job and its schedule are removed. Backups already saved in
+      <span class="mono">${escapeHtml(job.destination_dir)}</span> are kept.</p>`,
+    confirmLabel: 'Delete job',
+    danger: true,
+  });
+  if (!confirmed) return false;
   try {
-    const status = await invoke('get_monthly_status');
-    const jobs = status.jobs || [];
-    const completed = jobs.filter(j => j.completed).length;
-    const total = jobs.length;
-    const lines = [];
-    lines.push(`Monthly Status (current month)`);
-    lines.push(`Month folder: ${status.month_folder}`);
-    lines.push(`Completed: ${completed}/${total} job(s) have 2 monthly copies`);
-    lines.push('');
-    if (jobs.length === 0) {
-      lines.push('No jobs found.');
-    } else {
-      for (const j of jobs) {
-        const cluster = j.monthly_cluster || '(unset)';
-        const count = (j.copied_this_month ?? 0);
-        lines.push(`${j.completed ? 'COMPLETED' : 'PENDING'}  ${j.job_name}  [${cluster}]  ${count}/2`);
-      }
-    }
-    alert(lines.join('\n'));
+    await invoke('delete_job', { id: jobId });
+    await refreshJobs();
+    toast(`Deleted ${job.name}`, { kind: 'success' });
+    return true;
   } catch (e) {
-    alert('Failed to get monthly status: ' + e);
+    toastError('Could not delete the job', e);
+    return false;
   }
-};
+}
 
-export async function runMonthlyBackup() {
-  if (!confirm('Run monthly backup copy now? This will copy the first 2 backups per job for the current month into the monthly folder.')) {
+export async function pickDirectory(title, defaultPath) {
+  try {
+    const selected = await open({ directory: true, multiple: false, title, defaultPath: defaultPath || undefined });
+    return typeof selected === 'string' ? selected : null;
+  } catch (e) {
+    toastError('Could not open the folder picker', e);
+    return null;
+  }
+}
+
+// ---------- Edit drawer ----------
+
+function drawerType() {
+  return state.allJobs.find(j => j.id === state.editJobId)?.job_type || 'ark';
+}
+
+function showFieldsForType(type) {
+  document.querySelectorAll('#editJobDrawer [data-for-type]').forEach(el => {
+    el.hidden = !el.dataset.forType.split(' ').includes(type);
+  });
+  $('drawerNameRow').classList.toggle('field-row', type === 'ark');
+}
+
+export function updateDrawerDerivedPath() {
+  const type = drawerType();
+  const root = $('drawerRootDir').value.trim();
+  const hint = $('drawerDerivedPath');
+  if (!root) {
+    hint.textContent = '';
     return;
   }
-  
-  try {
-    await invoke('run_monthly_archive');
-    alert('Monthly archive completed');
-  } catch (e) {
-    alert('Failed to run monthly archive: ' + e);
+  let label = '';
+  let path = '';
+  if (type === 'ark') {
+    const map = state.arkMaps.find(m => m.id === $('drawerMap').value);
+    if (map) {
+      label = 'saves';
+      path = joinPath(root, 'ShooterGame', 'Saved', 'SavedArks', map.folder_name);
+    }
+  } else if (type === 'minecraft') {
+    label = 'world';
+    path = joinPath(root, 'world');
+  } else if (type === 'palworld') {
+    label = 'saves';
+    path = joinPath(root, 'Pal', 'Saved', 'SaveGames', '0');
   }
-};
+  hint.textContent = path ? `${label} → ${shortenPath(path, 4)}` : '';
+  hint.title = path;
+}
 
-export function collectJobData() {
-  const rootDir = document.getElementById('rootDir').value.trim();
-  const destinationDir = document.getElementById('destinationDir').value.trim();
-  const isMinecraft = state.currentJobType === 'minecraft';
-  const isPalworld = state.currentJobType === 'palworld';
-  const cluster = isMinecraft
-    ? (document.getElementById('monthlyClusterMinecraft')?.value || '')
-    : isPalworld
-      ? (document.getElementById('monthlyClusterPalworld')?.value || '')
-      : (document.getElementById('monthlyCluster')?.value || '');
+function clearDrawerErrors() {
+  ['drawerJobNameError', 'drawerMapError', 'drawerRconError', 'drawerRootDirError', 'drawerDestinationDirError']
+    .forEach(id => { $(id).textContent = ''; });
+  $('drawerSaveError').hidden = true;
+}
 
-  if (!rootDir) {
-    showError('rootDirError', 'Server root directory is required');
-    return null;
+function drawerMetaText(job) {
+  const parts = [];
+  parts.push(job.last_run_at ? `Last save ${formatTime(job.last_run_at)}` : 'Never saved');
+  if (job.last_file_size) parts.push(formatFileSize(job.last_file_size));
+  if (!job.enabled) parts.push('paused');
+  else if (job.next_run_at) parts.push(`next ${formatUntil(job.next_run_at)}`);
+  return parts.join(' · ');
+}
+
+export async function openEditDrawer(jobId) {
+  let job = state.allJobs.find(j => j.id === jobId);
+  if (!job) {
+    await refreshJobs();
+    job = state.allJobs.find(j => j.id === jobId);
   }
-  if (!destinationDir) {
-    showError('destinationDirError', 'Destination directory is required');
-    return null;
+  if (!job) {
+    toast('That job no longer exists', { kind: 'warning' });
+    return;
   }
-  if (!cluster) {
-    const clusterErrorId = isMinecraft
-      ? 'monthlyClusterMinecraftError'
-      : isPalworld
-        ? 'monthlyClusterPalworldError'
-        : 'monthlyClusterError';
-    showError(clusterErrorId, 'Monthly cluster is required');
-    return null;
-  }
+  state.editJobId = job.id;
+  const type = job.job_type || 'ark';
+  const groupKey = getJobGroupKey(job);
 
-  let name, intervalValue, intervalUnit, map, includeSaves, includeMap, includeServerFiles, includePluginConfigs, retentionDays;
+  $('drawerGame').className = `drawer-game game-${groupKey}`;
+  $('drawerGame').innerHTML = `${gameChipHtml(groupKey, true)}${escapeHtml(GAMES[groupKey].label)}`;
+  $('drawerJobTitle').textContent = job.name;
+  $('drawerJobMeta').textContent = drawerMetaText(job);
 
-  if (isMinecraft) {
-    name = document.getElementById('jobNameMinecraft').value.trim();
-    if (!name) {
-      showError('jobNameMinecraftError', 'Job name is required');
-      return null;
-    }
-    const rconHost = document.getElementById('rconHostMinecraft').value.trim();
-    const rconPortVal = document.getElementById('rconPortMinecraft').value.trim();
-    const rconPort = parseInt(rconPortVal, 10);
-    const rconPassword = document.getElementById('rconPasswordMinecraft').value;
-    if (!rconHost) {
-      showError('jobNameMinecraftError', 'RCON host is required');
-      return null;
-    }
-    if (!rconPortVal || isNaN(rconPort) || rconPort < 1 || rconPort > 65535) {
-      showError('jobNameMinecraftError', 'RCON port must be 1-65535');
-      return null;
-    }
-    if (!rconPassword) {
-      showError('jobNameMinecraftError', 'RCON password is required');
-      return null;
-    }
-    intervalValue = parseInt(document.getElementById('intervalValueMinecraft').value) || 1;
-    intervalUnit = document.getElementById('intervalUnitMinecraft').value;
-    retentionDays = 30;
-    map = '';
-    includeSaves = false;
-    includeMap = false;
-    includeServerFiles = false;
-    includePluginConfigs = false;
-  } else if (isPalworld) {
-    name = document.getElementById('jobNamePalworld').value.trim();
-    if (!name) {
-      showError('jobNamePalworldError', 'Job name is required');
-      return null;
-    }
-    intervalValue = parseInt(document.getElementById('intervalValuePalworld').value) || 1;
-    intervalUnit = document.getElementById('intervalUnitPalworld').value;
-    retentionDays = parseInt(document.getElementById('retentionDaysPalworld').value) || 7;
-    map = '';
-    includeSaves = false;
-    includeMap = false;
-    includeServerFiles = false;
-    includePluginConfigs = false;
-  } else {
-    map = document.getElementById('mapSelect').value;
-    name = document.getElementById('jobName').value.trim();
-    if (!map) {
-      showError('mapError', 'Map selection is required');
-      return null;
-    }
-    if (!name) {
-      showError('jobNameError', 'Job name is required');
-      return null;
-    }
-    intervalValue = parseInt(document.getElementById('intervalValue').value) || 1;
-    intervalUnit = document.getElementById('intervalUnit').value;
-    retentionDays = parseInt(document.getElementById('retentionDays').value) || 7;
-    includeSaves = document.getElementById('includeSaves').checked;
-    includeMap = document.getElementById('includeMap').checked;
-    includeServerFiles = document.getElementById('includeServerFiles').checked;
-    includePluginConfigs = document.getElementById('includePluginConfigs').checked;
+  $('drawerJobName').value = job.name || '';
+  $('drawerIntervalValue').value = job.interval_value || 1;
+  setSelectValue($('drawerIntervalUnit'), job.interval_unit || 'minutes');
+  $('drawerRetention').value = job.retention_days || 7;
+  setSelectValue($('drawerCluster'), job.monthly_cluster || GAMES[groupKey].cluster);
+  $('drawerRootDir').value = job.root_dir || '';
+  $('drawerDestinationDir').value = job.destination_dir || '';
+  setSwitch($('drawerEnabled'), job.enabled);
+  $('drawerEnabledHint').textContent = ENABLED_HINTS[type] || '';
+
+  if (type === 'ark') {
+    if (state.arkMaps.length === 0) await refreshMapSelects(false);
+    populateMapSelect($('drawerMap'), state.arkMaps, job.map || '');
+    $('drawerIncludeMap').checked = !!job.include_map;
+    $('drawerIncludeSaves').checked = !!job.include_saves;
+    $('drawerIncludeServerFiles').checked = !!job.include_server_files;
+    $('drawerIncludePluginConfigs').checked = !!job.include_plugin_configs;
+  } else if (type === 'minecraft') {
+    $('drawerRconHost').value = job.rcon_host || '';
+    $('drawerRconPort').value = job.rcon_port || 25575;
+    $('drawerRconPassword').value = job.rcon_password || '';
+  } else if (type === 'palworld') {
+    $('drawerApiHost').value = job.rcon_host || '';
   }
 
-  clearAllErrors();
+  showFieldsForType(type);
+  updateDrawerDerivedPath();
+  clearDrawerErrors();
+  $('editJobForm').scrollTop = 0;
+  drawerSnapshot = JSON.stringify(collectDrawerData(job, { validate: false }));
+  openOverlay($('editJobDrawer'), { onDismiss: closeEditDrawer, initialFocus: '#drawerJobName' });
+}
+
+/** Close the drawer, asking first if there are unsaved edits (unless `force`). */
+export async function closeEditDrawer(force = false) {
+  const job = state.allJobs.find(j => j.id === state.editJobId);
+  if (!force && job && drawerSnapshot && JSON.stringify(collectDrawerData(job, { validate: false })) !== drawerSnapshot) {
+    const discard = await confirmDialog({
+      title: 'Discard changes?',
+      body: `<p>Your edits to ${escapeHtml(job.name)} have not been saved.</p>`,
+      confirmLabel: 'Discard',
+      danger: true,
+    });
+    if (!discard) return;
+  }
+  closeOverlay($('editJobDrawer'));
+  state.editJobId = null;
+  drawerSnapshot = null;
+}
+
+function collectDrawerData(job, { validate = true } = {}) {
+  const type = job.job_type || 'ark';
+  const name = $('drawerJobName').value.trim();
+  const rootDir = $('drawerRootDir').value.trim();
+  const destinationDir = $('drawerDestinationDir').value.trim();
+  const intervalValue = parseInt($('drawerIntervalValue').value, 10);
+  const retention = parseInt($('drawerRetention').value, 10);
+
+  if (validate) {
+    clearDrawerErrors();
+    let valid = true;
+    const fail = (id, message) => {
+      $(id).textContent = message;
+      valid = false;
+    };
+    if (!name) fail('drawerJobNameError', 'Job name is required');
+    if (!rootDir) fail('drawerRootDirError', 'Server root is required');
+    if (!destinationDir) fail('drawerDestinationDirError', 'Destination is required');
+    if (type === 'ark' && !$('drawerMap').value) fail('drawerMapError', 'Pick a map');
+    if (type === 'minecraft') {
+      const port = parseInt($('drawerRconPort').value, 10);
+      if (!$('drawerRconHost').value.trim()) fail('drawerRconError', 'RCON host is required');
+      else if (!port || port < 1 || port > 65535) fail('drawerRconError', 'RCON port must be 1–65535');
+      else if (!$('drawerRconPassword').value) fail('drawerRconError', 'RCON password is required');
+    }
+    if (!valid) return null;
+  }
 
   const payload = {
-    job_type: state.currentJobType,
-    monthly_cluster: cluster,
+    ...jobToInput(job),
     name,
     root_dir: rootDir,
     destination_dir: destinationDir,
-    map,
-    include_saves: includeSaves,
-    include_map: includeMap,
-    include_server_files: includeServerFiles,
-    include_plugin_configs: includePluginConfigs,
-    interval_value: intervalValue,
-    interval_unit: intervalUnit,
-    retention_days: retentionDays,
-    enabled: document.getElementById('enabled').checked
+    monthly_cluster: $('drawerCluster').value,
+    interval_value: Math.max(1, intervalValue || 1),
+    interval_unit: $('drawerIntervalUnit').value,
+    enabled: getSwitch($('drawerEnabled')),
   };
-  if (isMinecraft) {
-    payload.rcon_host = document.getElementById('rconHostMinecraft').value.trim();
-    payload.rcon_port = parseInt(document.getElementById('rconPortMinecraft').value, 10) || 25575;
-    payload.rcon_password = document.getElementById('rconPasswordMinecraft').value;
-  } else if (isPalworld) {
-    const apiHost = document.getElementById('apiHostPalworld').value.trim();
-    payload.rcon_host = apiHost || null;
-    payload.rcon_port = null;
-    payload.rcon_password = null;
+
+  if (type === 'ark') {
+    Object.assign(payload, {
+      map: $('drawerMap').value,
+      retention_days: Math.max(1, retention || 7),
+      include_map: $('drawerIncludeMap').checked,
+      include_saves: $('drawerIncludeSaves').checked,
+      include_server_files: $('drawerIncludeServerFiles').checked,
+      include_plugin_configs: $('drawerIncludePluginConfigs').checked,
+    });
+  } else if (type === 'minecraft') {
+    Object.assign(payload, {
+      map: '',
+      retention_days: 30,
+      rcon_host: $('drawerRconHost').value.trim(),
+      rcon_port: parseInt($('drawerRconPort').value, 10) || 25575,
+      rcon_password: $('drawerRconPassword').value,
+    });
+  } else if (type === 'palworld') {
+    Object.assign(payload, {
+      map: '',
+      retention_days: Math.max(1, retention || 7),
+      rcon_host: $('drawerApiHost').value.trim() || null,
+      rcon_port: null,
+      rcon_password: null,
+    });
   }
   return payload;
 }
 
-export function setJobFormVisibilityForType(jobType) {
-  const type = jobType || 'ark';
-  const arkEl = document.getElementById('jobFormArkFields');
-  const mcEl = document.getElementById('jobFormMinecraftFields');
-  const pwEl = document.getElementById('jobFormPalworldFields');
-  if (arkEl) arkEl.style.display = type === 'ark' ? '' : 'none';
-  if (mcEl) mcEl.style.display = type === 'minecraft' ? '' : 'none';
-  if (pwEl) pwEl.style.display = type === 'palworld' ? '' : 'none';
-}
+export async function saveJobChanges() {
+  const job = state.allJobs.find(j => j.id === state.editJobId);
+  if (!job) return;
+  const payload = collectDrawerData(job);
+  if (!payload) return;
 
-export async function loadJobIntoForm(job) {
-  state.currentJobId = job.id;
-  state.currentJobType = job.job_type || 'ark';
-  const isMinecraft = state.currentJobType === 'minecraft';
-  const isPalworld = state.currentJobType === 'palworld';
-
-  document.getElementById('rootDir').value = job.root_dir || '';
-  document.getElementById('destinationDir').value = job.destination_dir || '';
-  document.getElementById('enabled').checked = job.enabled || false;
-
-  if (isMinecraft) {
-    document.getElementById('jobNameMinecraft').value = job.name || '';
-    const mcCluster = document.getElementById('monthlyClusterMinecraft');
-    if (mcCluster) mcCluster.value = job.monthly_cluster || 'Minecraft';
-    document.getElementById('intervalValueMinecraft').value = job.interval_value || 1;
-    document.getElementById('intervalUnitMinecraft').value = job.interval_unit || 'minutes';
-    document.getElementById('rconHostMinecraft').value = job.rcon_host || '';
-    document.getElementById('rconPortMinecraft').value = job.rcon_port || 25575;
-    document.getElementById('rconPasswordMinecraft').value = job.rcon_password || '';
-  } else if (isPalworld) {
-    document.getElementById('jobNamePalworld').value = job.name || '';
-    const pwCluster = document.getElementById('monthlyClusterPalworld');
-    if (pwCluster) pwCluster.value = job.monthly_cluster || 'Palworld';
-    document.getElementById('intervalValuePalworld').value = job.interval_value || 1;
-    document.getElementById('intervalUnitPalworld').value = job.interval_unit || 'minutes';
-    document.getElementById('retentionDaysPalworld').value = job.retention_days || 7;
-    document.getElementById('apiHostPalworld').value = job.rcon_host || '';
-  } else {
-    await refreshMapSelects(true, { mapSelect: job.map || '' });
-    document.getElementById('jobName').value = job.name || '';
-    const arkCluster = document.getElementById('monthlyCluster');
-    if (arkCluster) arkCluster.value = job.monthly_cluster || 'ASA Legacy';
-    document.getElementById('includeSaves').checked = job.include_saves || false;
-    document.getElementById('includeMap').checked = job.include_map || false;
-    document.getElementById('includeServerFiles').checked = job.include_server_files || false;
-    document.getElementById('includePluginConfigs').checked = job.include_plugin_configs || false;
-    document.getElementById('intervalValue').value = job.interval_value || 1;
-    document.getElementById('intervalUnit').value = job.interval_unit || 'minutes';
-    document.getElementById('retentionDays').value = job.retention_days || 7;
+  const btn = $('drawerSaveBtn');
+  setButtonBusy(btn, true, 'Saving…');
+  try {
+    await invoke('update_job', { job: payload });
+    await refreshJobs();
+    closeEditDrawer(true);
+    toast(`Saved ${payload.name}`, { kind: 'success' });
+  } catch (e) {
+    const err = $('drawerSaveError');
+    err.textContent = String(e);
+    err.hidden = false;
+  } finally {
+    setButtonBusy(btn, false);
   }
-
-  setJobFormVisibilityForType(state.currentJobType);
-  clearAllErrors();
 }
 
-export function showError(elementId, message) {
-  document.getElementById(elementId).textContent = message;
+export async function deleteJobFromDrawer() {
+  if (!state.editJobId) return;
+  if (await deleteJob(state.editJobId)) closeEditDrawer(true);
 }
 
-export function clearError(elementId) {
-  document.getElementById(elementId).textContent = '';
+export async function pickDrawerRootDir() {
+  const selected = await pickDirectory('Select server root folder', $('drawerRootDir').value.trim());
+  if (selected) {
+    $('drawerRootDir').value = selected;
+    $('drawerRootDirError').textContent = '';
+    updateDrawerDerivedPath();
+  }
 }
 
-export function clearAllErrors() {
-  clearError('rootDirError');
-  clearError('destinationDirError');
-  clearError('mapError');
-  clearError('jobNameError');
-  const clErr = document.getElementById('monthlyClusterError');
-  if (clErr) clErr.textContent = '';
-  const mcErr = document.getElementById('jobNameMinecraftError');
-  if (mcErr) mcErr.textContent = '';
-  const mcClErr = document.getElementById('monthlyClusterMinecraftError');
-  if (mcClErr) mcClErr.textContent = '';
+export async function pickDrawerDestinationDir() {
+  const selected = await pickDirectory('Select backup destination folder', $('drawerDestinationDir').value.trim());
+  if (selected) {
+    $('drawerDestinationDir').value = selected;
+    $('drawerDestinationDirError').textContent = '';
+  }
+}
+
+export function setupEditDrawer() {
+  bindSwitch($('drawerEnabled'));
+  $('drawerRootDir').addEventListener('input', updateDrawerDerivedPath);
+  $('drawerMap').addEventListener('change', updateDrawerDerivedPath);
+  $('editJobForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    saveJobChanges();
+  });
+  $('editJobForm').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+      e.preventDefault();
+      saveJobChanges();
+    }
+  });
 }

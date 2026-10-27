@@ -1,16 +1,18 @@
-import { state } from '../../state.js';
+import { state, getJobGroupKey } from '../../state.js';
+import { onSegmentedChange } from '../../utils/dom.js';
+import { getJobRowState, updateToggleAllLabel } from './table.js';
 
 function jobMatchesFilter(job) {
-  const search = (document.getElementById('jobSearchInput')?.value || '').toLowerCase().trim();
-  const statusFilter = document.getElementById('jobStatusFilter')?.value || 'all';
-  const typeFilter = document.getElementById('jobTypeFilter')?.value || 'all';
+  const { game, status, text } = state.jobFilter;
 
-  if (typeFilter !== 'all' && (job.job_type || 'ark') !== typeFilter) return false;
+  if (game !== 'all' && getJobGroupKey(job) !== game) return false;
 
-  if (statusFilter === 'enabled' && !job.enabled) return false;
-  if (statusFilter === 'disabled' && job.enabled) return false;
-  if (statusFilter === 'error' && !job.last_error) return false;
+  if (status !== 'all') {
+    const kind = getJobRowState(job).kind;
+    if (kind !== status) return false;
+  }
 
+  const search = text.toLowerCase().trim();
   if (search) {
     const haystack = [
       job.name,
@@ -18,7 +20,7 @@ function jobMatchesFilter(job) {
       job.monthly_cluster,
       job.root_dir,
       job.destination_dir,
-      job.job_type || 'ark'
+      job.job_type || 'ark',
     ].join(' ').toLowerCase();
     if (!haystack.includes(search)) return false;
   }
@@ -26,20 +28,36 @@ function jobMatchesFilter(job) {
 }
 
 export function applyJobFilters() {
-  document.querySelectorAll('#jobsTableBody tr[data-job-id]').forEach(row => {
-    const jobId = row.dataset.jobId;
-    const job = state.allJobs.find(j => j.id === jobId);
-    row.classList.toggle('hidden-row', job ? !jobMatchesFilter(job) : false);
+  let visible = 0;
+  document.querySelectorAll('#jobsTableBody .job-row[data-job-id]').forEach(row => {
+    const job = state.allJobs.find(j => j.id === row.dataset.jobId);
+    const show = job ? jobMatchesFilter(job) : false;
+    row.classList.toggle('hidden-row', !show);
+    if (show) visible++;
   });
 
-  document.querySelectorAll('#jobsTableBody tr.group-header-row').forEach(groupRow => {
-    const groupKey = groupRow.dataset.groupKey;
-    const jobRows = [...document.querySelectorAll(`#jobsTableBody tr[data-job-id][data-group="${groupKey}"]`)]
-      .filter(r => !r.classList.contains('hidden-row'));
-    groupRow.classList.toggle('hidden-row', jobRows.length === 0);
+  document.querySelectorAll('#jobsTableBody .job-group').forEach(group => {
+    const anyVisible = group.querySelector('.job-row:not(.hidden-row)') !== null;
+    group.classList.toggle('hidden-row', !anyVisible);
   });
 
-  const jobsPanel = document.getElementById('jobsPanel');
-  const visibleJobs = document.querySelectorAll('#jobsTableBody tr[data-job-id]:not(.hidden-row)').length;
-  if (jobsPanel) jobsPanel.style.display = state.allJobs.length > 0 ? '' : 'none';
+  const noMatch = document.getElementById('jobsNoMatch');
+  if (noMatch) noMatch.hidden = visible > 0 || state.allJobs.length === 0;
+  updateToggleAllLabel();
+}
+
+export function setupJobFilters() {
+  const search = document.getElementById('jobSearchInput');
+  search?.addEventListener('input', () => {
+    state.jobFilter.text = search.value;
+    applyJobFilters();
+  });
+  document.getElementById('jobStatusFilter')?.addEventListener('change', (e) => {
+    state.jobFilter.status = e.target.value;
+    applyJobFilters();
+  });
+  onSegmentedChange(document.getElementById('jobGameFilter'), (value) => {
+    state.jobFilter.game = value;
+    applyJobFilters();
+  });
 }

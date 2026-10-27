@@ -10,6 +10,17 @@ use crate::validation::derive_plugins_dir;
 pub struct SourcePlugin {
     pub name: String,
     pub path: String,
+    /// "Version" from the plugin's PluginInfo.json, when present.
+    #[serde(default)]
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct InstalledPlugin {
+    /// Folder name without the `_OFF` suffix.
+    pub name: String,
+    pub version: Option<String>,
+    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -17,13 +28,62 @@ pub struct DestinationServer {
     pub name: String,
     pub path: String,
     pub plugin_path: String,
+    #[serde(default)]
+    pub plugins_dir_exists: bool,
+    #[serde(default)]
+    pub installed: Vec<InstalledPlugin>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct InstallResult {
     pub files_copied: usize,
     pub files_overwritten: usize,
+    /// Existing config.json files left in place because the caller asked to keep them.
+    #[serde(default)]
+    pub files_skipped: usize,
     pub errors: Vec<String>,
+}
+
+/// Each plugin's own settings file, which installs can leave untouched.
+const PLUGIN_CONFIG_FILE: &str = "config.json";
+
+/// Read "Version" from `PluginInfo.json` in a plugin folder. ArkApi writes it as a number
+/// (e.g. `1.8`) or a string; anything unreadable is treated as unknown.
+pub fn read_plugin_version(plugin_dir: &Path) -> Option<String> {
+    let content = fs::read_to_string(plugin_dir.join("PluginInfo.json")).ok()?;
+    let value: serde_json::Value =
+        serde_json::from_str(content.trim_start_matches('\u{feff}')).ok()?;
+    let version = value.get("Version").or_else(|| value.get("version"))?;
+    let text = match version {
+        serde_json::Value::String(s) => s.trim().to_string(),
+        serde_json::Value::Number(n) => n.to_string(),
+        _ => return None,
+    };
+    (!text.is_empty()).then_some(text)
+}
+
+/// Plugin folders in a server's plugin directory, with versions.
+fn list_installed_plugins(plugins_dir: &Path) -> Vec<InstalledPlugin> {
+    let mut installed: Vec<InstalledPlugin> = fs::read_dir(plugins_dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| {
+                    let folder = e.file_name().to_str()?.to_string();
+                    let disabled = folder.ends_with("_OFF");
+                    let name = folder.strip_suffix("_OFF").unwrap_or(&folder).to_string();
+                    Some(InstalledPlugin {
+                        name,
+                        version: read_plugin_version(&e.path()),
+                        disabled,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    installed.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    installed
 }
 
 /// List immediate subdirectories of a source folder as installable plugins
@@ -57,7 +117,8 @@ pub fn list_source_plugins(source_path: &str) -> Result<Vec<SourcePlugin>, Strin
                                 .ok_or_else(|| "Invalid path encoding".to_string())?
                                 .to_string();
                             
-                            plugins.push(SourcePlugin { name, path });
+                            let version = read_plugin_version(&entry_path);
+                            plugins.push(SourcePlugin { name, path, version });
                         }
                     }
                     Err(e) => {
@@ -291,6 +352,8 @@ pub fn discover_plugin_destinations(
                 name,
                 path: root,
                 plugin_path: plugin_path_str,
+                plugins_dir_exists: plugin_path.is_dir(),
+                installed: list_installed_plugins(&plugin_path),
             });
         }
     }
@@ -326,13 +389,17 @@ fn replace_file(source: &Path, dest: &Path) -> Result<(), String> {
     result
 }
 
-/// Copy a folder recursively, tracking overwrites
+/// Copy a folder recursively, tracking overwrites. With `keep_existing_config`, a `config.json`
+/// directly inside `destination` that already exists is left as it is.
+/// Returns (files copied, files overwritten, files skipped).
 fn copy_folder_recursive(
     source: &Path,
     destination: &Path,
-) -> Result<(usize, usize), String> {
+    keep_existing_config: bool,
+) -> Result<(usize, usize, usize), String> {
     let mut files_copied = 0;
     let mut files_overwritten = 0;
+    let mut files_skipped = 0;
     
     // Create destination directory if it doesn't exist
     if let Some(parent) = destination.parent() {
@@ -364,11 +431,20 @@ fn copy_folder_recursive(
             }
 
             if file_type.is_dir() {
-                let (copied, overwritten) = copy_folder_recursive(&entry_path, &dest_path)?;
+                let (copied, overwritten, skipped) =
+                    copy_folder_recursive(&entry_path, &dest_path, false)?;
                 files_copied += copied;
                 files_overwritten += overwritten;
+                files_skipped += skipped;
             } else {
                 let existed = dest_path.exists();
+                let is_config = entry_name
+                    .to_str()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(PLUGIN_CONFIG_FILE));
+                if existed && keep_existing_config && is_config {
+                    files_skipped += 1;
+                    continue;
+                }
                 if existed {
                     // On Windows, replacing a read-only file fails. Clear read-only so it can be replaced.
                     if let Ok(meta) = fs::metadata(&dest_path) {
@@ -390,7 +466,7 @@ fn copy_folder_recursive(
         return Err("Source is not a directory".to_string());
     }
     
-    Ok((files_copied, files_overwritten))
+    Ok((files_copied, files_overwritten, files_skipped))
 }
 
 /// Install selected plugins to selected destinations.
@@ -398,6 +474,7 @@ fn copy_folder_recursive(
 pub fn install_plugins(
     source_plugin_paths: Vec<String>,
     destination_plugin_paths: Vec<String>,
+    keep_existing_config: bool,
     allowed_dir_keys: &HashSet<String>,
 ) -> Result<InstallResult, String> {
     for dest_plugin_path in &destination_plugin_paths {
@@ -411,6 +488,7 @@ pub fn install_plugins(
 
     let mut total_files_copied = 0;
     let mut total_files_overwritten = 0;
+    let mut total_files_skipped = 0;
     let mut errors = Vec::new();
 
     for source_path in &source_plugin_paths {
@@ -459,10 +537,11 @@ pub fn install_plugins(
                 }
             }
 
-            match copy_folder_recursive(source, &dest_plugin_folder) {
-                Ok((copied, overwritten)) => {
+            match copy_folder_recursive(source, &dest_plugin_folder, keep_existing_config) {
+                Ok((copied, overwritten, skipped)) => {
                     total_files_copied += copied;
                     total_files_overwritten += overwritten;
+                    total_files_skipped += skipped;
                 }
                 Err(e) => {
                     let error_msg = format!(
@@ -479,6 +558,7 @@ pub fn install_plugins(
     Ok(InstallResult {
         files_copied: total_files_copied,
         files_overwritten: total_files_overwritten,
+        files_skipped: total_files_skipped,
         errors,
     })
 }
@@ -535,9 +615,9 @@ mod tests {
         perms.set_readonly(true);
         fs::set_permissions(&existing, perms).unwrap();
 
-        let (copied, overwritten) = copy_folder_recursive(&src_dir, &dst_dir).unwrap();
+        let (copied, overwritten, skipped) = copy_folder_recursive(&src_dir, &dst_dir, false).unwrap();
 
-        assert_eq!((copied, overwritten), (0, 1));
+        assert_eq!((copied, overwritten, skipped), (0, 1, 0));
         assert_eq!(fs::read(&existing).unwrap(), b"new");
         assert!(!dst_dir.join("plugin.dll.arkade-tmp").exists());
     }
@@ -578,10 +658,65 @@ mod tests {
         let sources = vec![source.to_string_lossy().to_string()];
 
         let elsewhere = temp.path().join("elsewhere").to_string_lossy().to_string();
-        assert!(install_plugins(sources.clone(), vec![elsewhere], &allowed).is_err());
+        assert!(install_plugins(sources.clone(), vec![elsewhere], false, &allowed).is_err());
 
-        let result = install_plugins(sources, vec![plugins_dir.to_string_lossy().to_string()], &allowed).unwrap();
+        let result = install_plugins(sources, vec![plugins_dir.to_string_lossy().to_string()], false, &allowed).unwrap();
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         assert!(plugins_dir.join("NewPlugin").join("config.json").exists());
+    }
+
+    #[test]
+    fn install_can_keep_existing_top_level_config() {
+        let temp = tempfile::tempdir().unwrap();
+        let (root, plugins_dir) = setup_server(&temp.path().join("server1"));
+        let allowed = allowed_plugin_dir_keys(&[root]);
+
+        let source = temp.path().join("src").join("CoolPlugin");
+        fs::create_dir_all(source.join("sub")).unwrap();
+        fs::write(source.join("config.json"), b"new").unwrap();
+        fs::write(source.join("CoolPlugin.dll"), b"dll").unwrap();
+        fs::write(source.join("sub").join("config.json"), b"nested").unwrap();
+        let installed = plugins_dir.join("CoolPlugin");
+        fs::write(installed.join("Config.json"), b"mine").unwrap();
+        let sources = vec![source.to_string_lossy().to_string()];
+        let dest = vec![plugins_dir.to_string_lossy().to_string()];
+
+        let result = install_plugins(sources.clone(), dest.clone(), true, &allowed).unwrap();
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.files_skipped, 1);
+        assert_eq!(fs::read(installed.join("Config.json")).unwrap(), b"mine");
+        assert_eq!(fs::read(installed.join("sub").join("config.json")).unwrap(), b"nested");
+        assert!(installed.join("CoolPlugin.dll").exists());
+
+        let result = install_plugins(sources, dest, false, &allowed).unwrap();
+        assert_eq!(result.files_skipped, 0);
+        assert_eq!(fs::read(installed.join("Config.json")).unwrap(), b"new");
+    }
+
+    #[test]
+    fn plugin_version_reads_number_or_string() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        assert_eq!(read_plugin_version(dir), None);
+        fs::write(dir.join("PluginInfo.json"), "\u{feff}{\"FullName\":\"Shop\",\"Version\":1.8}").unwrap();
+        assert_eq!(read_plugin_version(dir).as_deref(), Some("1.8"));
+        fs::write(dir.join("PluginInfo.json"), r#"{"Version":"2.1.0"}"#).unwrap();
+        assert_eq!(read_plugin_version(dir).as_deref(), Some("2.1.0"));
+        fs::write(dir.join("PluginInfo.json"), "not json").unwrap();
+        assert_eq!(read_plugin_version(dir), None);
+    }
+
+    #[test]
+    fn installed_plugins_report_disabled_and_versions() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        fs::create_dir_all(dir.join("Beta_OFF")).unwrap();
+        fs::create_dir_all(dir.join("alpha")).unwrap();
+        fs::write(dir.join("alpha").join("PluginInfo.json"), r#"{"Version":"1.0"}"#).unwrap();
+        let installed = list_installed_plugins(dir);
+        assert_eq!(installed.len(), 2);
+        assert_eq!((installed[0].name.as_str(), installed[0].disabled), ("alpha", false));
+        assert_eq!(installed[0].version.as_deref(), Some("1.0"));
+        assert_eq!((installed[1].name.as_str(), installed[1].disabled), ("Beta", true));
     }
 }

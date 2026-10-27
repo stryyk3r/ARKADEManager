@@ -4,6 +4,31 @@ All notable changes to ARKADE Manager are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.2] - 2026-10-27
+
+### Changed
+
+- **New interface** — every screen redesigned: Manrope / JetBrains Mono fonts (bundled, work offline), flat dark palette, no gradients or glows.
+- **Backups** — game groups collapse (remembered between launches), a status strip replaces the summary cards, separate ASA / ASE filters, live progress in the running job's row, relative times ("in 12 min", "18 min ago"). New row menu item: Pause / Resume schedule.
+- **Edit job** — opens in a side panel instead of the inline form, shows the derived saves path, and asks before discarding unsaved edits.
+- **Add job** — wizard with a step rail showing each choice. Suggests servers found under the configured server folder, fills in the job name, and checks the destination (exists, writable, free space, same drive as the monthly archive). ARK: Survival Evolved can be picked directly.
+- **Monthly status** — modal with two copy markers per job, copy dates, and the reason when copies are missing.
+- **Logs** — column view (time, level, source, message) with level, source and text filters, a log file picker, and follow mode. Warnings and errors are highlighted and `caused by:` chains are split onto separate lines.
+- **Plugins** — Install and Enable / disable merged into one page with tabs. Install shows plugin versions (from `PluginInfo.json`) and a review of every install as new, update or same; plugins disabled on a server are flagged before installing a second, enabled copy. Enable / disable stages switch changes and applies them to one server or all servers.
+- **Data Lookup** — live ID validation, select-and-delete bar, and search timing.
+- **Settings** — section navigation, live "N servers found" check for each server folder, and the monthly archive folder can now be changed.
+- **Dialogs** — in-app confirmations and notifications replace system alert boxes.
+
+### Added
+
+- **Keep existing config.json** option when installing plugins (on by default).
+
+### Fixed
+
+- **Log timestamps** — warning and error lines were written without a time. Every line now has a time and the module that wrote it.
+
+---
+
 ## [2.6.1] - 2026-10-27
 
 ### Changed
