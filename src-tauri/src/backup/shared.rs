@@ -34,6 +34,88 @@ pub(crate) fn zip_options_for_path(path: &Path) -> FileOptions {
     }
 }
 
+/// Lowers the current thread's CPU and disk priority (Windows background mode) until dropped, so
+/// multi-GB backup copies yield to the game servers instead of competing with them. Must be
+/// dropped on the thread that created it; keep it within one synchronous call.
+pub(crate) struct BackgroundModeGuard {
+    #[cfg(windows)]
+    active: bool,
+}
+
+impl BackgroundModeGuard {
+    pub(crate) fn begin() -> Self {
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::System::Threading::{
+                GetCurrentThread, SetThreadPriority, THREAD_MODE_BACKGROUND_BEGIN,
+            };
+            // Fails if the thread is already in background mode; then the outer guard ends it.
+            let active = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN) } != 0;
+            Self { active }
+        }
+        #[cfg(not(windows))]
+        Self {}
+    }
+}
+
+impl Drop for BackgroundModeGuard {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        if self.active {
+            use windows_sys::Win32::System::Threading::{
+                GetCurrentThread, SetThreadPriority, THREAD_MODE_BACKGROUND_END,
+            };
+            unsafe { SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_END) };
+        }
+    }
+}
+
+/// Copy a large file (a finished archive) at background priority. On Windows the copy bypasses
+/// the file cache, so a multi-GB archive does not push the game servers' cached files out of
+/// memory. Overwrites `dest` like `fs::copy`.
+pub(crate) fn copy_large_file(source: &Path, dest: &Path) -> std::io::Result<()> {
+    let _background = BackgroundModeGuard::begin();
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{CopyFileExW, COPY_FILE_NO_BUFFERING};
+        let wide = |p: &Path| -> Vec<u16> { p.as_os_str().encode_wide().chain(Some(0)).collect() };
+        let (src_w, dest_w) = (wide(source), wide(dest));
+        let ok = unsafe {
+            CopyFileExW(
+                src_w.as_ptr(),
+                dest_w.as_ptr(),
+                None,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                COPY_FILE_NO_BUFFERING,
+            )
+        };
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    fs::copy(source, dest).map(|_| ())
+}
+
+/// True if both existing paths are on the same volume (so a rename or hard link between them works).
+pub(crate) fn same_volume(a: &Path, b: &Path) -> bool {
+    fn volume(p: &Path) -> Option<String> {
+        match fs::canonicalize(p).ok()?.components().next()? {
+            std::path::Component::Prefix(prefix) => {
+                Some(prefix.as_os_str().to_string_lossy().to_ascii_lowercase())
+            }
+            _ => None,
+        }
+    }
+    match (volume(a), volume(b)) {
+        (Some(va), Some(vb)) => va == vb,
+        _ => false,
+    }
+}
+
 /// Find 7-Zip executable. Windows: check Program Files then PATH. Other: PATH only.
 pub(crate) fn find_7z() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
@@ -152,7 +234,7 @@ pub(crate) fn rename_temp_to_backup(temp_path: &Path, backup_path: &Path) -> Res
             RENAME_RETRY_ATTEMPTS,
             temp_path.display()
         );
-        fs::copy(temp_path, backup_path)
+        copy_large_file(temp_path, backup_path)
             .with_context(|| format!("Failed to copy temp to: {}", backup_path.display()))?;
         for attempt in 1..=RENAME_RETRY_ATTEMPTS {
             if fs::remove_file(temp_path).is_ok() {
@@ -370,4 +452,44 @@ pub(crate) fn verify_zip_integrity(zip_path: &Path) -> Result<()> {
         .with_context(|| "Failed to read first entry from ZIP")?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod large_copy_tests {
+    use super::*;
+
+    #[test]
+    fn large_copy_copies_and_overwrites() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("a.7z");
+        let dest = temp.path().join("b.7z");
+        let data: Vec<u8> = (0..3_000_000u32).map(|i| i as u8).collect();
+        fs::write(&source, &data).unwrap();
+        fs::write(&dest, b"old").unwrap();
+
+        copy_large_file(&source, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), data);
+    }
+
+    #[test]
+    fn large_copy_reports_missing_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let err = copy_large_file(&temp.path().join("missing"), &temp.path().join("x")).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn same_volume_for_sibling_folders() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("a")).unwrap();
+        fs::create_dir_all(temp.path().join("b")).unwrap();
+        assert!(same_volume(&temp.path().join("a"), &temp.path().join("b")));
+        assert!(!same_volume(&temp.path().join("missing"), &temp.path().join("b")));
+    }
+
+    #[test]
+    fn background_mode_guard_nests() {
+        let _outer = BackgroundModeGuard::begin();
+        let _inner = BackgroundModeGuard::begin();
+    }
 }

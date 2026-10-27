@@ -4,6 +4,24 @@ All notable changes to ARKADE Manager are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.1] - 2026-10-27
+
+### Changed
+
+- **Minecraft 7-Zip compression** — level 3 instead of 7 and half the CPU cores instead of a fixed 12 threads, running at below-normal priority so game servers on the same machine keep priority. Region files are already compressed, so the higher level used far more CPU and RAM for little size gain.
+- **Large archive copies** — finished archives are copied at background CPU/disk priority without filling the Windows file cache. When temp and the backup folder are on the same drive, 7-Zip writes straight into the backup folder and skips the copy.
+- **Monthly archive** — on the same volume the monthly copy is a hard link (no data copied). Otherwise it is copied to a `.partial` file and renamed when complete.
+
+### Fixed
+
+- **Minecraft RCON save pause** — the backup checks that the server confirms `save-off` and `save-all flush` before copying the world, and stops if it does not.
+- **Minecraft without RCON** — the backup refuses to run while the server is running (world `session.lock` held), since the world can't be copied safely then.
+- **Minecraft world verification** — the copied world is spot-checked (region files whole 4 KiB sectors, `level.dat` decompresses cleanly). Problems are reported as backup warnings.
+- **Locked files in staging copy** — files are opened with shared access, so the server can keep writing them during the copy instead of failing with "used by another process".
+- **7-Zip temp archive** — written under a `.tmp` name and renamed when complete. Any leftover temp file is removed first, so 7-Zip never appends to it.
+
+---
+
 ## [2.5.3] - 2026-08-17
 
 ### Fixed

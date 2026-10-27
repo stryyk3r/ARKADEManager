@@ -17,10 +17,7 @@ pub(crate) fn job_has_rcon(job: &Job) -> bool {
 /// blocking the backup (and with it the scheduler) forever.
 /// All commands are attempted; if any of them fails, an error naming the failed commands is returned.
 pub(crate) fn run_rcon_commands(host: String, port: u16, password: String, commands: Vec<&'static str>) -> Result<()> {
-    let addr = format!("{}:{}", host.trim(), port);
-    let mut client = RconClient::connect(&addr, DEFAULT_TIMEOUTS)
-        .map_err(|e| anyhow::Error::new(RconConnectError(format!("{:#}", e))))?;
-    client.log_in(&password).context("RCON login failed")?;
+    let mut client = connect_and_log_in(&host, port, &password)?;
     let mut failures = Vec::new();
     for cmd in commands {
         if let Err(e) = client.send_command(cmd) {
@@ -32,6 +29,60 @@ pub(crate) fn run_rcon_commands(host: String, port: u16, password: String, comma
         anyhow::bail!("RCON command(s) failed: {}", failures.join("; "));
     }
     Ok(())
+}
+
+fn connect_and_log_in(host: &str, port: u16, password: &str) -> Result<RconClient> {
+    let addr = format!("{}:{}", host.trim(), port);
+    let mut client = RconClient::connect(&addr, DEFAULT_TIMEOUTS)
+        .map_err(|e| anyhow::Error::new(RconConnectError(format!("{:#}", e))))?;
+    client.log_in(&password).context("RCON login failed")?;
+    Ok(client)
+}
+
+/// Stop Minecraft from writing the world (`save-off`), then write everything pending to disk
+/// (`save-all flush`), checking that the server confirms each step. Copying the world is only
+/// safe once both are confirmed; on error the caller's `SaveOnGuard` re-enables saving.
+pub(crate) fn pause_minecraft_saving(host: String, port: u16, password: String) -> Result<()> {
+    let mut client = connect_and_log_in(&host, port, &password)?;
+
+    let reply = client.send_command("save-off").context("RCON command 'save-off' failed")?;
+    log::info!("RCON save-off reply: {}", reply.trim());
+    check_save_off_reply(&reply)?;
+
+    let reply = client
+        .send_command("save-all flush")
+        .context("RCON command 'save-all flush' failed")?;
+    log::info!("RCON save-all flush reply: {}", reply.trim());
+    check_flush_reply(&reply)
+}
+
+/// Saving must be off before the copy. "Already turned off" is accepted (the world is not being
+/// written either way) but logged, since something other than this backup turned it off.
+fn check_save_off_reply(reply: &str) -> Result<()> {
+    let lower = reply.to_ascii_lowercase();
+    if lower.contains("saving is now disabled") {
+        return Ok(());
+    }
+    if lower.contains("already turned off") {
+        log::warn!(
+            "RCON: world saving was ALREADY off before this backup (an earlier save-on may have failed, or another tool turned it off). Continuing; saving will be turned back on afterwards."
+        );
+        return Ok(());
+    }
+    anyhow::bail!(
+        "Server did not confirm that world saving is off (save-off replied: {:?}). Not copying a world that may still be written to",
+        reply.trim()
+    )
+}
+
+fn check_flush_reply(reply: &str) -> Result<()> {
+    if reply.to_ascii_lowercase().contains("saved the game") {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "Server did not confirm the world was saved (save-all flush replied: {:?}). Not copying a world that may be half-written",
+        reply.trim()
+    )
 }
 
 /// Nothing accepted the RCON connection (server stopped, or RCON not listening), as opposed to a
@@ -335,6 +386,48 @@ mod tests {
         let err = run_rcon_commands(host, port, "pw".into(), vec!["save-off", "save-all flush"]).unwrap_err();
         assert!(err.to_string().contains("save-all flush"), "{}", err);
         assert!(!err.to_string().contains("'save-off'"), "{}", err);
+    }
+
+    #[test]
+    fn save_off_reply_must_confirm_saving_is_off() {
+        assert!(check_save_off_reply("Automatic saving is now disabled").is_ok());
+        assert!(check_save_off_reply("Saving is already turned off").is_ok());
+        assert!(check_save_off_reply("").is_err());
+        assert!(check_save_off_reply("Unknown or incomplete command").is_err());
+    }
+
+    #[test]
+    fn flush_reply_must_confirm_save() {
+        assert!(check_flush_reply("Saving the game (this may take a moment!)Saved the game").is_ok());
+        assert!(check_flush_reply("Saving the game (this may take a moment!)").is_err());
+        assert!(check_flush_reply("").is_err());
+    }
+
+    #[test]
+    fn pause_minecraft_saving_stops_when_save_off_is_not_confirmed() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (host, port) = fake_logged_in_server(move |s, id, command| {
+            tx.send(command).unwrap();
+            write_reply(s, id, 0, "Unknown or incomplete command");
+        });
+
+        let err = pause_minecraft_saving(host, port, "pw".into()).unwrap_err();
+        assert!(err.to_string().contains("did not confirm"), "{}", err);
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), "save-off");
+        assert!(rx.recv_timeout(Duration::from_millis(500)).is_err(), "save-all flush should not be sent");
+    }
+
+    #[test]
+    fn pause_minecraft_saving_accepts_confirmed_replies() {
+        let (host, port) = fake_logged_in_server(|s, id, command| {
+            let reply = match command.as_str() {
+                "save-off" => "Automatic saving is now disabled",
+                _ => "Saving the game (this may take a moment!)Saved the game",
+            };
+            write_reply(s, id, 0, reply);
+        });
+
+        pause_minecraft_saving(host, port, "pw".into()).unwrap();
     }
 
     #[test]

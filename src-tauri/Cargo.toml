@@ -1,6 +1,6 @@
 [package]
 name = "arkade-manager"
-version = "2.6.0"
+version = "2.6.1"
 description = "ARKADE Manager - ARK Survival Ascended Server Management Tool"
 authors = ["ARKADE Manager"]
 license = ""
@@ -30,6 +30,14 @@ simplelog = { version = "0.12" }
 reqwest = { version = "0.12", features = ["json"] }
 semver = "1.0"
 url = "2"
+flate2 = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 tempfile = "3.8"

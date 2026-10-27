@@ -5,7 +5,7 @@ use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::shared::{rename_temp_to_backup, TempFileGuard};
+use super::shared::{copy_large_file, rename_temp_to_backup, same_volume, TempFileGuard};
 
 const DEFAULT_MONTHLY_BASE_DIR: &str = r"C:\arkade\Arkade Shared Global\FOTM Backups";
 
@@ -75,16 +75,35 @@ fn count_existing_monthly_copies(category_dir: &Path, job_name: &str) -> Result<
     Ok(count)
 }
 
-/// Copy to `{dest}.partial` and rename when complete, so a copy interrupted part-way (network
-/// share dropped, disk full) never leaves a truncated archive that counts as a monthly copy.
+/// Put a complete copy of `source` at `dest`.
+///
+/// On the same volume this is a hard link: no data is copied, and the file appears in one atomic
+/// step (archives are never modified after they are written, and deleting the original backup
+/// later does not affect the link). Otherwise copy to `{dest}.partial` and rename when complete,
+/// so a copy interrupted part-way (network share dropped, disk full) never leaves a truncated
+/// archive that counts as a monthly copy.
 fn copy_complete_file(source: &Path, dest: &Path) -> Result<()> {
     let file_name = dest
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| anyhow::anyhow!("Invalid destination path: {}", dest.display()))?;
+
+    let dest_dir = dest.parent().unwrap_or(Path::new("."));
+    if same_volume(source, dest_dir) {
+        match fs::hard_link(source, dest) {
+            Ok(()) => return Ok(()),
+            Err(e) => log::info!(
+                "MONTHLY: hard link {} -> {} not possible ({}); copying instead",
+                source.display(),
+                dest.display(),
+                e
+            ),
+        }
+    }
+
     let partial = dest.with_file_name(format!("{}.partial", file_name));
     let _partial_guard = TempFileGuard::new(&partial);
-    fs::copy(source, &partial).with_context(|| {
+    copy_large_file(source, &partial).with_context(|| {
         format!("Failed to copy {} -> {}", source.display(), partial.display())
     })?;
     rename_temp_to_backup(&partial, dest)
@@ -436,6 +455,35 @@ mod tests {
 
         assert_eq!(fs::read(&dest).unwrap(), b"archive");
         assert_eq!(fs::read_dir(&dest_dir).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn monthly_copy_survives_original_being_deleted() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("Island_20261001_120000.7z");
+        fs::write(&source, b"archive").unwrap();
+        let dest_dir = temp.path().join("monthly");
+        fs::create_dir_all(&dest_dir).unwrap();
+        let dest = dest_dir.join("Island_20261001_120000.7z");
+
+        copy_complete_file(&source, &dest).unwrap();
+        // Retention later deletes the regular backup; the monthly copy must stay intact.
+        fs::remove_file(&source).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"archive");
+    }
+
+    #[test]
+    fn existing_monthly_copy_is_replaced() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("Island_20261001_120000.7z");
+        fs::write(&source, b"new").unwrap();
+        let dest_dir = temp.path().join("monthly");
+        fs::create_dir_all(&dest_dir).unwrap();
+        let dest = dest_dir.join("Island_20261001_120000.7z");
+        fs::write(&dest, b"old").unwrap();
+
+        copy_complete_file(&source, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"new");
     }
 
     #[test]

@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::BufReader;
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -16,12 +16,109 @@ use walkdir::WalkDir;
 use zip::write::ZipWriter;
 
 use super::monthly::maybe_copy_backup_to_monthly;
-use super::rcon::{job_has_rcon, run_rcon_commands, SaveOnGuard};
+use super::rcon::{job_has_rcon, pause_minecraft_saving, SaveOnGuard};
 use super::retention::cleanup_minecraft_retention;
 use super::shared::{
-    add_optional_file_to_zip, find_7z, is_disk_full_error, rename_temp_to_backup,
-    verify_zip_integrity, zip_options_for_path, BackupProgressPayload, TempFileGuard,
+    add_optional_file_to_zip, copy_large_file, find_7z, is_disk_full_error, rename_temp_to_backup,
+    same_volume, verify_zip_integrity, zip_options_for_path, BackupProgressPayload, TempFileGuard,
 };
+
+/// 7-Zip level 3: Minecraft region files are already zlib-compressed, so higher levels cost far
+/// more CPU and RAM (level 7 with 12 threads needed ~2 GB) for very little size reduction.
+const SEVEN_ZIP_LEVEL: u32 = 3;
+
+/// Use at most half the cores so the game servers on this machine keep the rest.
+fn seven_zip_threads() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| (n.get() / 2).max(1))
+        .unwrap_or(2)
+}
+
+/// True if a running Minecraft server holds `world/session.lock`. The server keeps an OS lock on
+/// that file while the world is open (Minecraft 1.16+), so reading it fails while the server runs.
+/// Used when a job has no RCON settings: without `save-off`, the world may only be copied while
+/// the server is stopped.
+fn minecraft_world_in_use(world_dir: &Path) -> bool {
+    let lock_path = world_dir.join("session.lock");
+    let result = fs::File::open(&lock_path).and_then(|mut f| {
+        let mut buf = [0u8; 1];
+        f.read(&mut buf)
+    });
+    match result {
+        Ok(_) => false,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        // ERROR_SHARING_VIOLATION (32), ERROR_LOCK_VIOLATION (33)
+        Err(e) if matches!(e.raw_os_error(), Some(32) | Some(33)) => true,
+        Err(e) => {
+            log::warn!(
+                "Could not check {} ({}); assuming the server is running",
+                lock_path.display(),
+                e
+            );
+            true
+        }
+    }
+}
+
+/// Spot-check a copied world for signs it was caught mid-write: region files (.mca) are always a
+/// whole number of 4 KiB sectors, and level.dat must decompress cleanly (gzip checks its CRC).
+/// Returns one message per problem; an empty list means nothing suspicious was found.
+fn verify_minecraft_world_copy(dirs: &[PathBuf]) -> Vec<String> {
+    let mut problems = Vec::new();
+    for dir in dirs {
+        for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let is_region = path.extension().map_or(false, |e| e.eq_ignore_ascii_case("mca"));
+            let is_level_dat = path.file_name().map_or(false, |n| n.eq_ignore_ascii_case("level.dat"));
+            if is_region {
+                let len = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                if len % 4096 != 0 {
+                    problems.push(format!(
+                        "{} is {} bytes, not whole 4 KiB sectors (may have been copied mid-write)",
+                        path.display(),
+                        len
+                    ));
+                }
+            } else if is_level_dat {
+                let result = fs::File::open(path).and_then(|f| {
+                    let mut decoder = flate2::read::GzDecoder::new(BufReader::new(f));
+                    std::io::copy(&mut decoder, &mut std::io::sink())
+                });
+                match result {
+                    Ok(n) if n > 0 => {}
+                    Ok(_) => problems.push(format!("{} is empty", path.display())),
+                    Err(e) => problems.push(format!("{} is not readable ({})", path.display(), e)),
+                }
+            }
+        }
+    }
+    problems
+}
+
+/// Return the archive size, or the shared "completed with warnings" error (archive kept, run
+/// reported as a warning in the UI) when anything about the backup was not clean.
+fn finish_with_warnings(file_size: u64, backup_path: &Path, warnings: &[String]) -> Result<u64> {
+    if warnings.is_empty() {
+        return Ok(file_size);
+    }
+    Err(anyhow::anyhow!(
+        "Backup completed with warnings: {}. Archive was created at: {}",
+        warnings.join("; "),
+        backup_path.display()
+    ))
+}
+
+/// Copy one file for the staging copy. `File::open` shares read, write and delete access, so the
+/// server can still write or replace the file (player data, mod files) while it is being copied
+/// instead of failing with "used by another process".
+fn copy_file_shared(source: &Path, dest: &Path) -> std::io::Result<u64> {
+    let mut reader = BufReader::with_capacity(1 << 20, fs::File::open(source)?);
+    let mut writer = fs::File::create(dest)?;
+    std::io::copy(&mut reader, &mut writer)
+}
 /// Returns true if a file should be skipped when copying/archiving Minecraft backup paths.
 fn should_skip_minecraft_backup_file(path: &Path) -> bool {
     if path.components().any(|c| c.as_os_str() == OsStr::new("orebfuscator_cache")) {
@@ -70,7 +167,7 @@ fn copy_minecraft_paths_to_staging(
                 fs::create_dir_all(p)
                     .with_context(|| format!("Failed to create dir: {}", p.display()))?;
             }
-            fs::copy(path, &dest).with_context(|| {
+            copy_file_shared(path, &dest).with_context(|| {
                 format!("Failed to copy {} to {}", path.display(), dest.display())
             })?;
             file_count += 1;
@@ -180,11 +277,9 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
 
         log::info!("RCON: disabling saves and flushing (save-off; save-all flush)");
         let copy_result = async {
-            tokio::task::spawn_blocking(move || {
-                run_rcon_commands(host, port, password, vec!["save-off", "save-all flush"])
-            })
-            .await
-            .context("RCON task failed")??;
+            tokio::task::spawn_blocking(move || pause_minecraft_saving(host, port, password))
+                .await
+                .context("RCON task failed")??;
 
             log::info!("Waiting 3 seconds for save-all flush to complete before copying...");
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
@@ -224,6 +319,18 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
         log::info!("Staging copy completed, compressing from: {}", staging_dir.display());
         (staging_dir, staging_guard)
     } else {
+        // No RCON: saving can't be paused, so the world may only be copied while the server is stopped.
+        let world_dir = backup_dirs
+            .iter()
+            .find(|d| d.file_name() == Some(OsStr::new("world")))
+            .cloned()
+            .unwrap_or_else(|| root_path.join("world"));
+        if minecraft_world_in_use(&world_dir) {
+            anyhow::bail!(
+                "The Minecraft server is running, but this job has no RCON settings, so world saving can't be paused for the backup. Copying a world while the server writes to it can corrupt the backup and make the server's own saves fail. Edit the job and add RCON host, port and password (enable-rcon in server.properties), or run the backup while the server is stopped"
+            );
+        }
+        log::info!("No RCON settings; the server is stopped (world not locked), backing up the world folders directly");
         (root_path.to_path_buf(), StagingGuard(None))
     };
 
@@ -239,21 +346,61 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
         dir_names.clone()
     };
 
+    // With RCON, archive the staging copy taken while saving was paused — not the live folders,
+    // which the server has been writing to again since save-on.
+    let archived_dirs: Vec<PathBuf> = if use_staging_layout {
+        dir_names
+            .iter()
+            .map(|name| source_path.join(name))
+            .filter(|dir| dir.is_dir())
+            .collect()
+    } else {
+        backup_dirs.clone()
+    };
+
+    let mut warnings: Vec<String> = Vec::new();
+    let problems = verify_minecraft_world_copy(&archived_dirs);
+    if !problems.is_empty() {
+        log::warn!("MINECRAFT BACKUP: the copied world looks damaged in {} place(s):", problems.len());
+        for p in &problems {
+            log::warn!("  - {}", p);
+        }
+        warnings.push(format!(
+            "{} world file(s) look damaged (see the log; the live world may already be corrupted, or it was written to during the copy)",
+            problems.len()
+        ));
+    }
+
     if let Some(seven_z) = find_7z() {
         let dest_dir = job.destination_dir.clone();
         let filename = format!("{}_{}.7z", job.name, timestamp);
         let backup_path = Path::new(&dest_dir).join(&filename);
+        // Written under a .tmp name and renamed when complete, so an interrupted run never
+        // leaves a truncated .7z that retention and the monthly archive treat as a backup.
+        let dest_temp = backup_path.with_extension("7z.tmp");
+        let _dest_temp_guard = TempFileGuard::new(&dest_temp);
 
-        if let Some(parent) = backup_path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create destination directory: {}", parent.display()))?;
-        }
+        let dest_parent = backup_path.parent().unwrap_or(Path::new(&dest_dir));
+        fs::create_dir_all(dest_parent)
+            .with_context(|| format!("Failed to create destination directory: {}", dest_parent.display()))?;
 
-        // Compress to temp on system drive (e.g. C) first, then copy to backup location (e.g. D).
-        // This can be faster when the backup drive is slower, and avoids 7z doing many small writes across drives.
-        let temp_7z = std::env::temp_dir().join(format!("arkade_7z_{}_{}.7z", job.id, timestamp));
+        // When the backup folder is on another drive, compress to temp on the system drive first and
+        // copy the finished archive across once (avoids 7z doing many small writes to a slower
+        // drive). On the same drive, write straight into the backup folder and skip that copy.
+        let write_direct = same_volume(&std::env::temp_dir(), dest_parent);
+        let temp_7z = if write_direct {
+            dest_temp.clone()
+        } else {
+            std::env::temp_dir().join(format!("arkade_7z_{}_{}.7z", job.id, timestamp))
+        };
         let _temp_7z_guard = TempFileGuard::new(&temp_7z);
-        log::info!("7-Zip writing to temp: {} then copying to {}", temp_7z.display(), backup_path.display());
+        // 7z adds to an existing archive, so never let it find a leftover file.
+        let _ = fs::remove_file(&temp_7z);
+        if write_direct {
+            log::info!("7-Zip writing directly to: {}", temp_7z.display());
+        } else {
+            log::info!("7-Zip writing to temp: {} then copying to {}", temp_7z.display(), backup_path.display());
+        }
 
         // 7z progress 0-100 is mapped to 10-90%
         let result = run_minecraft_backup_7z(
@@ -270,17 +417,15 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
                     let _ = fs::remove_file(&temp_7z);
                     anyhow::bail!("Backup produced an empty file (0 bytes). 7-Zip may have added no files.");
                 }
-                // Compression done → 90%; copying .7z to backup location
+                // Compression done → 90%; moving .7z into the backup location
                 if let Some(ref tx) = progress_tx {
                     let _ = tx.send(90);
                 }
-                log::info!("Copying 7z archive to backup location: {}", backup_path.display());
-                // Copy under a .tmp name and rename when complete, so an interrupted copy never
-                // leaves a truncated .7z that retention and the monthly archive treat as a backup.
-                let dest_temp = backup_path.with_extension("7z.tmp");
-                let _dest_temp_guard = TempFileGuard::new(&dest_temp);
-                fs::copy(&temp_7z, &dest_temp)
-                    .with_context(|| format!("Failed to copy 7z from {} to {}", temp_7z.display(), dest_temp.display()))?;
+                if !write_direct {
+                    log::info!("Copying 7z archive to backup location: {}", backup_path.display());
+                    copy_large_file(&temp_7z, &dest_temp)
+                        .with_context(|| format!("Failed to copy 7z from {} to {}", temp_7z.display(), dest_temp.display()))?;
+                }
                 rename_temp_to_backup(&dest_temp, &backup_path)?;
                 let _ = fs::remove_file(&temp_7z);
                 // Copy to backup location done → 100%
@@ -306,13 +451,10 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
                 // If 7-Zip completed with warnings (locked/unreadable files), keep the archive but surface a warning in UI.
                 // This prevents fallback to built-in ZIP and avoids repeated attempts.
                 if outcome.had_warnings {
-                    return Err(anyhow::anyhow!(
-                        "Backup completed with warnings: some files were locked/unreadable and were skipped. Archive was created at: {}",
-                        backup_path.display()
-                    ));
+                    warnings.push("some files were locked/unreadable and were skipped".to_string());
                 }
 
-                return Ok(outcome.file_size);
+                return finish_with_warnings(outcome.file_size, &backup_path, &warnings);
             }
             Err(e) => {
                 let _ = fs::remove_file(&temp_7z);
@@ -332,17 +474,7 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
             .with_context(|| format!("Failed to create destination directory: {}", parent.display()))?;
     }
 
-    // With RCON, archive the staging copy taken while saving was paused — not the live folders,
-    // which the server has been writing to again since save-on.
-    let zip_source_dirs: Vec<PathBuf> = if use_staging_layout {
-        dir_names
-            .iter()
-            .map(|name| source_path.join(name))
-            .filter(|dir| dir.is_dir())
-            .collect()
-    } else {
-        backup_dirs.clone()
-    };
+    let zip_source_dirs = archived_dirs;
 
     let result = attempt_minecraft_backup(&temp_path, &backup_path, &zip_source_dirs).await;
 
@@ -365,9 +497,9 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
             }
 
             if skipped > 0 {
-                return Err(skipped_files_warning(skipped, &backup_path));
+                warnings.push(format!("{} file(s) were locked/unreadable and were skipped", skipped));
             }
-            Ok(file_size)
+            finish_with_warnings(file_size, &backup_path, &warnings)
         }
         Err(e) if is_disk_full_error(&e) => {
             log::warn!("Minecraft backup failed (disk full). Cleaning up old backups and retrying...");
@@ -392,9 +524,9 @@ pub async fn create_minecraft_backup(job: &Job, app_data: &AppData, app_handle: 
                     }
 
                     if skipped > 0 {
-                        return Err(skipped_files_warning(skipped, &backup_path));
+                        warnings.push(format!("{} file(s) were locked/unreadable and were skipped", skipped));
                     }
-                    Ok(file_size)
+                    finish_with_warnings(file_size, &backup_path, &warnings)
                 }
                 Err(retry_err) => {
                     if is_disk_full_error(&retry_err) {
@@ -444,11 +576,12 @@ async fn run_minecraft_backup_7z(
             .unwrap_or(backup_path.clone());
         let backup_str = backup_abs.to_string_lossy().to_string();
 
+        let threads = seven_zip_threads();
         let mut cmd = Command::new(&seven_z);
         cmd.arg("a")
             .arg("-t7z")
-            .arg("-mx=7")
-            .arg("-mmt=12")
+            .arg(format!("-mx={}", SEVEN_ZIP_LEVEL))
+            .arg(format!("-mmt={}", threads))
             .arg("-bsp2")
             .arg("-xr!*.jar")
             .arg("-xr!orebfuscator_cache")
@@ -462,8 +595,10 @@ async fn run_minecraft_backup_7z(
             .stderr(Stdio::piped());
         #[cfg(windows)]
         {
+            use windows_sys::Win32::System::Threading::BELOW_NORMAL_PRIORITY_CLASS;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
+            // Below-normal priority: the game servers get the CPU first; 7-Zip uses what is left.
+            cmd.creation_flags(CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS);
         }
 
         let mut child = match cmd.spawn() {
@@ -472,7 +607,9 @@ async fn run_minecraft_backup_7z(
         };
 
         log::info!(
-            "7-Zip compression started (level 7, 12 threads) from {} -> {} (items: {})",
+            "7-Zip compression started (level {}, {} threads, below-normal priority) from {} -> {} (items: {})",
+            SEVEN_ZIP_LEVEL,
+            threads,
             root_path.display(),
             backup_abs.display(),
             archive_items.join(", ")
@@ -629,16 +766,6 @@ async fn run_minecraft_backup_7z(
     })
 }
 
-/// Same wording as the 7-Zip path so the UI treats both alike: the archive is kept, but the run
-/// is reported as a warning instead of a clean success because it is missing files.
-fn skipped_files_warning(skipped: usize, backup_path: &Path) -> anyhow::Error {
-    anyhow::anyhow!(
-        "Backup completed with warnings: {} file(s) were locked/unreadable and were skipped. Archive was created at: {}",
-        skipped,
-        backup_path.display()
-    )
-}
-
 /// Returns (archive size, number of files skipped because they could not be read).
 async fn attempt_minecraft_backup(
     temp_path: &Path,
@@ -710,4 +837,90 @@ async fn attempt_minecraft_backup(
     verify_zip_integrity(backup_path)?;
 
     Ok((file_size, skipped_locked.len()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn write_gzip(path: &Path, data: &[u8]) {
+        let mut enc = flate2::write::GzEncoder::new(fs::File::create(path).unwrap(), flate2::Compression::default());
+        enc.write_all(data).unwrap();
+        enc.finish().unwrap();
+    }
+
+    #[test]
+    fn world_copy_check_passes_clean_world() {
+        let temp = tempfile::tempdir().unwrap();
+        let world = temp.path().join("world");
+        fs::create_dir_all(world.join("region")).unwrap();
+        write_gzip(&world.join("level.dat"), b"nbt data");
+        fs::write(world.join("region").join("r.0.0.mca"), vec![0u8; 8192]).unwrap();
+        fs::write(world.join("region").join("r.1.0.mca"), b"").unwrap();
+
+        assert!(verify_minecraft_world_copy(&[world]).is_empty());
+    }
+
+    #[test]
+    fn world_copy_check_flags_torn_region_and_bad_level_dat() {
+        let temp = tempfile::tempdir().unwrap();
+        let world = temp.path().join("world");
+        fs::create_dir_all(world.join("region")).unwrap();
+        // Truncated gzip: the decoder fails instead of reaching the CRC.
+        let mut level = Vec::new();
+        {
+            let mut enc = flate2::write::GzEncoder::new(&mut level, flate2::Compression::default());
+            enc.write_all(&[7u8; 4096]).unwrap();
+        }
+        fs::write(world.join("level.dat"), &level[..level.len() / 2]).unwrap();
+        fs::write(world.join("region").join("r.0.0.mca"), vec![0u8; 8192 + 100]).unwrap();
+
+        let problems = verify_minecraft_world_copy(&[world]);
+        assert_eq!(problems.len(), 2, "{:?}", problems);
+        assert!(problems.iter().any(|p| p.contains("r.0.0.mca")));
+        assert!(problems.iter().any(|p| p.contains("level.dat")));
+    }
+
+    #[test]
+    fn world_not_in_use_without_lock() {
+        let temp = tempfile::tempdir().unwrap();
+        assert!(!minecraft_world_in_use(temp.path()));
+        fs::write(temp.path().join("session.lock"), "\u{2603}").unwrap();
+        assert!(!minecraft_world_in_use(temp.path()));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn world_in_use_while_session_lock_is_held() {
+        let temp = tempfile::tempdir().unwrap();
+        let lock_path = temp.path().join("session.lock");
+        fs::write(&lock_path, "\u{2603}").unwrap();
+        // Like a running server: an exclusive OS lock over the whole file.
+        let held = fs::OpenOptions::new().write(true).open(&lock_path).unwrap();
+        held.try_lock().unwrap();
+
+        assert!(minecraft_world_in_use(temp.path()));
+        drop(held);
+        assert!(!minecraft_world_in_use(temp.path()));
+    }
+
+    #[test]
+    fn shared_copy_works_while_file_is_open_for_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("player.dat");
+        fs::write(&source, b"player").unwrap();
+        let _writer = fs::OpenOptions::new().append(true).open(&source).unwrap();
+
+        let dest = temp.path().join("copy.dat");
+        copy_file_shared(&source, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"player");
+    }
+
+    #[test]
+    fn warnings_keep_the_ui_prefix() {
+        assert_eq!(finish_with_warnings(5, Path::new("a.7z"), &[]).unwrap(), 5);
+        let err = finish_with_warnings(5, Path::new("a.7z"), &["x".into()]).unwrap_err();
+        assert!(err.to_string().starts_with("Backup completed with warnings: x."), "{}", err);
+    }
 }

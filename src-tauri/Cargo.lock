@@ -119,12 +119,13 @@ dependencies = [
 
 [[package]]
 name = "arkade-manager"
-version = "2.6.0"
+version = "2.6.1"
 dependencies = [
  "anyhow",
  "chrono",
  "directories",
  "env_logger",
+ "flate2",
  "log",
  "reqwest 0.12.28",
  "semver",
@@ -141,6 +142,7 @@ dependencies = [
  "url",
  "uuid",
  "walkdir",
+ "windows-sys 0.61.2",
  "zip 0.6.6",
 ]
 
