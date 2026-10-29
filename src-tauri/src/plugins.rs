@@ -362,6 +362,61 @@ pub fn discover_plugin_destinations(
     destinations
 }
 
+const LOCK_RETRY_ATTEMPTS: u32 = 10;
+const LOCK_RETRY_DELAY_MS: u64 = 500;
+
+/// ERROR_ACCESS_DENIED (5), ERROR_SHARING_VIOLATION (32), ERROR_LOCK_VIOLATION (33): what Windows
+/// returns while antivirus, the search indexer or OneDrive briefly holds a freshly written file.
+fn is_transient_lock_error(e: &std::io::Error) -> bool {
+    cfg!(windows) && matches!(e.raw_os_error(), Some(5) | Some(32) | Some(33))
+}
+
+/// Run a file operation, retrying for a few seconds while the file is briefly locked.
+fn with_lock_retry<T>(
+    what: &str,
+    path: &Path,
+    mut op: impl FnMut() -> std::io::Result<T>,
+) -> std::io::Result<T> {
+    let mut attempt = 1;
+    loop {
+        match op() {
+            Err(e) if is_transient_lock_error(&e) && attempt < LOCK_RETRY_ATTEMPTS => {
+                log::warn!(
+                    "{} {} failed (attempt {}/{}, file in use): {}. Retrying...",
+                    what,
+                    path.display(),
+                    attempt,
+                    LOCK_RETRY_ATTEMPTS,
+                    e
+                );
+                std::thread::sleep(std::time::Duration::from_millis(LOCK_RETRY_DELAY_MS));
+                attempt += 1;
+            }
+            other => return other,
+        }
+    }
+}
+
+/// Clear the read-only attribute, which on Windows blocks overwriting, renaming over or deleting a file.
+fn clear_readonly(path: &Path) {
+    if let Ok(meta) = fs::metadata(path) {
+        let mut p = meta.permissions();
+        if p.readonly() {
+            p.set_readonly(false);
+            let _ = fs::set_permissions(path, p);
+        }
+    }
+}
+
+fn remove_temp(temp: &Path) {
+    clear_readonly(temp);
+    if let Err(e) = with_lock_retry("Removing", temp, || fs::remove_file(temp)) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            log::warn!("Could not remove temp file {}: {}", temp.display(), e);
+        }
+    }
+}
+
 /// Copy `source` over `dest` without ever leaving `dest` missing or half-written: copy into a temp
 /// file next to it, then rename over the original. If either step fails (e.g. the DLL is locked by
 /// the running server), the existing file is left exactly as it was.
@@ -372,10 +427,18 @@ fn replace_file(source: &Path, dest: &Path) -> Result<(), String> {
         .ok_or_else(|| format!("Invalid destination file: {}", dest.display()))?;
     let temp = dest.with_file_name(format!("{}.arkade-tmp", file_name));
 
-    let result = fs::copy(source, &temp)
+    // A temp file left by an earlier failed install (possibly read-only) would block the copy.
+    if temp.exists() {
+        remove_temp(&temp);
+    }
+    clear_readonly(dest);
+
+    let result = with_lock_retry("Copying to", &temp, || fs::copy(source, &temp))
         .map_err(|e| format!("Failed to copy file {}: {}", source.display(), e))
         .and_then(|_| {
-            fs::rename(&temp, dest).map_err(|e| {
+            // fs::copy carries over the source's read-only flag; drop it so later installs can replace it.
+            clear_readonly(&temp);
+            with_lock_retry("Replacing", dest, || fs::rename(&temp, dest)).map_err(|e| {
                 format!(
                     "Failed to replace {} (it may be in use by the running server; the existing file was left unchanged): {}",
                     dest.display(),
@@ -384,89 +447,98 @@ fn replace_file(source: &Path, dest: &Path) -> Result<(), String> {
             })
         });
     if result.is_err() {
-        let _ = fs::remove_file(&temp);
+        remove_temp(&temp);
     }
     result
 }
 
 /// Copy a folder recursively, tracking overwrites. With `keep_existing_config`, a `config.json`
-/// directly inside `destination` that already exists is left as it is.
+/// directly inside `destination` that already exists is left as it is. A file that can't be
+/// copied is recorded in `errors` and the rest of the folder is still copied.
 /// Returns (files copied, files overwritten, files skipped).
 fn copy_folder_recursive(
     source: &Path,
     destination: &Path,
     keep_existing_config: bool,
-) -> Result<(usize, usize, usize), String> {
+    errors: &mut Vec<String>,
+) -> (usize, usize, usize) {
     let mut files_copied = 0;
     let mut files_overwritten = 0;
     let mut files_skipped = 0;
-    
-    // Create destination directory if it doesn't exist
-    if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create destination directory: {}", e))?;
+
+    if !source.is_dir() {
+        errors.push(format!("Source is not a directory: {}", source.display()));
+        return (0, 0, 0);
     }
-    fs::create_dir_all(destination)
-        .map_err(|e| format!("Failed to create destination directory: {}", e))?;
-    
-    // Copy all files and subdirectories
-    if source.is_dir() {
-        for entry in fs::read_dir(source)
-            .map_err(|e| format!("Failed to read source directory: {}", e))?
-        {
-            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
-            let entry_path = entry.path();
-            let entry_name = entry_path
-                .file_name()
-                .ok_or_else(|| "Invalid entry name".to_string())?;
-            let dest_path = destination.join(entry_name);
-            // file_type() does not follow links. Symlinks/junctions are skipped: following them could
-            // copy files from anywhere on disk or recurse forever if one points back up the tree.
-            let file_type = entry
-                .file_type()
-                .map_err(|e| format!("Failed to read entry type {:?}: {}", entry_path, e))?;
-            if file_type.is_symlink() {
-                log::warn!("Skipping link in plugin source (not copied): {}", entry_path.display());
+    if let Err(e) = fs::create_dir_all(destination) {
+        errors.push(format!(
+            "Failed to create destination directory {}: {}",
+            destination.display(),
+            e
+        ));
+        return (0, 0, 0);
+    }
+
+    let entries = match fs::read_dir(source) {
+        Ok(entries) => entries,
+        Err(e) => {
+            errors.push(format!("Failed to read source directory {}: {}", source.display(), e));
+            return (0, 0, 0);
+        }
+    };
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                errors.push(format!("Failed to read entry in {}: {}", source.display(), e));
                 continue;
             }
+        };
+        let entry_path = entry.path();
+        let dest_path = destination.join(entry.file_name());
+        // file_type() does not follow links. Symlinks/junctions are skipped: following them could
+        // copy files from anywhere on disk or recurse forever if one points back up the tree.
+        let file_type = match entry.file_type() {
+            Ok(t) => t,
+            Err(e) => {
+                errors.push(format!("Failed to read entry type {}: {}", entry_path.display(), e));
+                continue;
+            }
+        };
+        if file_type.is_symlink() {
+            log::warn!("Skipping link in plugin source (not copied): {}", entry_path.display());
+            continue;
+        }
 
-            if file_type.is_dir() {
-                let (copied, overwritten, skipped) =
-                    copy_folder_recursive(&entry_path, &dest_path, false)?;
-                files_copied += copied;
-                files_overwritten += overwritten;
-                files_skipped += skipped;
-            } else {
-                let existed = dest_path.exists();
-                let is_config = entry_name
-                    .to_str()
-                    .is_some_and(|n| n.eq_ignore_ascii_case(PLUGIN_CONFIG_FILE));
-                if existed && keep_existing_config && is_config {
-                    files_skipped += 1;
-                    continue;
-                }
-                if existed {
-                    // On Windows, replacing a read-only file fails. Clear read-only so it can be replaced.
-                    if let Ok(meta) = fs::metadata(&dest_path) {
-                        let mut p = meta.permissions();
-                        p.set_readonly(false);
-                        let _ = fs::set_permissions(&dest_path, p);
-                    }
-                }
-
-                replace_file(&entry_path, &dest_path)?;
-                if existed {
-                    files_overwritten += 1;
-                } else {
-                    files_copied += 1;
+        if file_type.is_dir() {
+            let (copied, overwritten, skipped) =
+                copy_folder_recursive(&entry_path, &dest_path, false, errors);
+            files_copied += copied;
+            files_overwritten += overwritten;
+            files_skipped += skipped;
+        } else {
+            let existed = dest_path.exists();
+            let is_config = entry
+                .file_name()
+                .to_str()
+                .is_some_and(|n| n.eq_ignore_ascii_case(PLUGIN_CONFIG_FILE));
+            if existed && keep_existing_config && is_config {
+                files_skipped += 1;
+                continue;
+            }
+            match replace_file(&entry_path, &dest_path) {
+                Ok(()) if existed => files_overwritten += 1,
+                Ok(()) => files_copied += 1,
+                Err(e) => {
+                    log::error!("{}", e);
+                    errors.push(e);
                 }
             }
         }
-    } else {
-        return Err("Source is not a directory".to_string());
     }
-    
-    Ok((files_copied, files_overwritten, files_skipped))
+
+    (files_copied, files_overwritten, files_skipped)
 }
 
 /// Install selected plugins to selected destinations.
@@ -537,21 +609,19 @@ pub fn install_plugins(
                 }
             }
 
-            match copy_folder_recursive(source, &dest_plugin_folder, keep_existing_config) {
-                Ok((copied, overwritten, skipped)) => {
-                    total_files_copied += copied;
-                    total_files_overwritten += overwritten;
-                    total_files_skipped += skipped;
-                }
-                Err(e) => {
-                    let error_msg = format!(
-                        "Failed to copy {} to {}: {}",
-                        plugin_name, dest_plugin_path, e
-                    );
-                    errors.push(error_msg.clone());
-                    log::error!("{}", error_msg);
-                }
-            }
+            let mut copy_errors = Vec::new();
+            let (copied, overwritten, skipped) = copy_folder_recursive(
+                source,
+                &dest_plugin_folder,
+                keep_existing_config,
+                &mut copy_errors,
+            );
+            total_files_copied += copied;
+            total_files_overwritten += overwritten;
+            total_files_skipped += skipped;
+            errors.extend(copy_errors.into_iter().map(|e| {
+                format!("Failed to copy {} to {}: {}", plugin_name, dest_plugin_path, e)
+            }));
         }
     }
     
@@ -615,11 +685,87 @@ mod tests {
         perms.set_readonly(true);
         fs::set_permissions(&existing, perms).unwrap();
 
-        let (copied, overwritten, skipped) = copy_folder_recursive(&src_dir, &dst_dir, false).unwrap();
+        let mut errors = Vec::new();
+        let (copied, overwritten, skipped) =
+            copy_folder_recursive(&src_dir, &dst_dir, false, &mut errors);
 
+        assert!(errors.is_empty(), "{:?}", errors);
         assert_eq!((copied, overwritten, skipped), (0, 1, 0));
         assert_eq!(fs::read(&existing).unwrap(), b"new");
         assert!(!dst_dir.join("plugin.dll.arkade-tmp").exists());
+    }
+
+    #[test]
+    fn replace_file_handles_read_only_source_and_stale_temp() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("new.dll");
+        let dest = temp.path().join("plugin.dll");
+        fs::write(&source, b"new").unwrap();
+        fs::write(&dest, b"old").unwrap();
+        let stale = temp.path().join("plugin.dll.arkade-tmp");
+        fs::write(&stale, b"stale").unwrap();
+        for p in [&source, &stale] {
+            let mut perms = fs::metadata(p).unwrap().permissions();
+            perms.set_readonly(true);
+            fs::set_permissions(p, perms).unwrap();
+        }
+
+        replace_file(&source, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"new");
+        assert!(!fs::metadata(&dest).unwrap().permissions().readonly());
+        assert!(!stale.exists());
+
+        // A second install over the result must also work.
+        replace_file(&source, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"new");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn replace_file_waits_out_a_brief_lock() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("new.dll");
+        let dest = temp.path().join("plugin.dll");
+        fs::write(&source, b"new").unwrap();
+        fs::write(&dest, b"old").unwrap();
+
+        // Like antivirus scanning the file: held exclusively for a moment, then released.
+        let lock = fs::OpenOptions::new().read(true).share_mode(0).open(&dest).unwrap();
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1200));
+            drop(lock);
+        });
+
+        replace_file(&source, &dest).unwrap();
+        releaser.join().unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"new");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn one_locked_file_does_not_stop_the_rest() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let src_dir = temp.path().join("src");
+        let dst_dir = temp.path().join("dst");
+        fs::create_dir_all(&src_dir).unwrap();
+        fs::create_dir_all(&dst_dir).unwrap();
+        for name in ["a.dll", "b.dll", "c.json"] {
+            fs::write(src_dir.join(name), b"new").unwrap();
+            fs::write(dst_dir.join(name), b"old").unwrap();
+        }
+
+        let lock = fs::OpenOptions::new().read(true).share_mode(0).open(dst_dir.join("b.dll")).unwrap();
+        let mut errors = Vec::new();
+        let (_, overwritten, _) = copy_folder_recursive(&src_dir, &dst_dir, false, &mut errors);
+        drop(lock);
+
+        assert_eq!(errors.len(), 1, "{:?}", errors);
+        assert_eq!(overwritten, 2);
+        assert_eq!(fs::read(dst_dir.join("a.dll")).unwrap(), b"new");
+        assert_eq!(fs::read(dst_dir.join("c.json")).unwrap(), b"new");
+        assert_eq!(fs::read(dst_dir.join("b.dll")).unwrap(), b"old");
     }
 
     #[cfg(windows)]

@@ -4,6 +4,17 @@ All notable changes to ARKADE Manager are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.3] - 2026-10-28
+
+### Fixed
+
+- **Plugin installs over locked files** — when antivirus, the search indexer or OneDrive briefly holds a file, the copy retries for a few seconds instead of failing straight away.
+- **Read-only plugin files** — read-only source files, existing files and leftover `.arkade-tmp` files from an earlier failed install no longer block overwriting. Installed files are no longer left read-only, so later installs can replace them.
+- **One failed file no longer stops the install** — the rest of the plugin is still copied and each file that couldn't be copied is listed in the errors.
+- **App stays responsive during plugin installs** — the copy runs in the background instead of on the main async runtime.
+
+---
+
 ## [2.6.2] - 2026-10-27
 
 ### Changed

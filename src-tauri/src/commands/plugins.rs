@@ -86,10 +86,15 @@ pub async fn install_plugins(
         log::warn!("install_plugins: missing source or destination paths");
     }
     let roots = asa_server_roots(&state).await?;
-    plugins::install_plugins(
-        source_plugin_paths,
-        destination_plugin_paths,
-        keep_existing_config.unwrap_or(false),
-        &plugins::allowed_plugin_dir_keys(&roots),
-    )
+    // Blocking file IO that may wait out locked files, so keep it off the async runtime.
+    tokio::task::spawn_blocking(move || {
+        plugins::install_plugins(
+            source_plugin_paths,
+            destination_plugin_paths,
+            keep_existing_config.unwrap_or(false),
+            &plugins::allowed_plugin_dir_keys(&roots),
+        )
+    })
+    .await
+    .map_err(|e| format!("Plugin install task failed: {}", e))?
 }
